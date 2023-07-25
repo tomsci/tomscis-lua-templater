@@ -115,20 +115,28 @@ function makeSandbox()
     setmetatable(env, {
         __index = {
             -- Globals
-            ipairs = ipairs,
-            pairs = pairs,
-            next = next,
-            pcall = pcall,
-            error = error,
             assert = assert,
-            string = string,
-            table = table,
+            debug = {
+                traceback = debug.traceback,
+            },
+            error = error,
+            ipairs = ipairs,
             math = math,
-            utf8 = utf8,
+            next = next,
             os = {
                 date = os.date,
                 time = os.time,
             },
+            pairs = pairs,
+            pcall = pcall,
+            select = select,
+            string = string,
+            table = table,
+            tostring = tostring,
+            type = type,
+            utf8 = utf8,
+            xpcall = xpcall,
+
             -- Our helpers
             write = write,
             writef = writef,

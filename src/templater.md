@@ -58,24 +58,28 @@ There is no "special" syntax other than the block types described above. Everyth
 
 ### Standard Lua functions
 
-A subset of the [standard Lua functions](https://www.lua.org/manual/5.4/contents.html#index) are available:
+A sandboxed subset of the [standard Lua functions](https://www.lua.org/manual/5.4/contents.html#index) are available:
 
-* `ipairs`
-* `pairs`
-* `next`
-* `pcall`
-* `error`
 * `assert`
+* `debug.traceback`
+* `error`
+* `ipairs`
+* `math`
+* `next`
+* `os.date`, `os.time`
+* `pairs`
+* `pcall`
+* `select`
 * `string`
 * `table`
-* `math`
+* `tostring`
+* `type`
 * `utf8`
-* `os.date`, `os.time`
 
 
 ### `write(val)`
 
-This is the most fundamental primitive which casts `val` to a string (if necessary, using `tostring`) and writes it to the output.
+This is the most fundamental primitive which converts `val` to a string (if necessary, using [`tostring`](https://www.lua.org/manual/5.4/manual.html#pdf-tostring)) and writes it to the output. An error is raised if `val` evaluates to `nil`.
 
 Example:
 
