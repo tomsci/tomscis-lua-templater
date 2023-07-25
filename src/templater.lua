@@ -72,6 +72,18 @@ if site == nil then
     end
 end
 
+if readFile == nil then
+    function readFile(path)
+        local f<close>, err = io.open(path, "r")
+        if f then
+            local result = f:read("a")
+            return result
+        else
+            return nil, err
+        end
+    end
+end
+
 function dbg(...)
     io.stdout:write(string.format(...))
 end
@@ -107,7 +119,6 @@ function makeSandbox()
             pairs = pairs,
             next = next,
             pcall = pcall,
-            print = print,
             error = error,
             assert = assert,
             string = string,
@@ -140,6 +151,7 @@ function parse(filename, text)
     local pos = 1
     local lineNumber = 1 -- refers to start of inprogress, if set
     local result = {}
+    local includes = {}
 
     local env = makeSandbox()
 
@@ -177,12 +189,11 @@ function parse(filename, text)
     end
 
     env.include = function(path)
-        -- We should probably implement some caching here at some point
-        local f<close> = parseAssert(io.open(path, "r"), "Failed to open file %s", path)
-        local newText = f:read("a")
+        local newText = parseAssert(readFile(path), "Failed to open file %s", path)
         local origFileDirective = string.format('{%%file("%s", %d)%%}', filename, lineNumber)
         local newFileDirective = string.format('{%%file("%s", 1)%%}', path)
         text = text:sub(1, pos - 1)..newFileDirective..newText..origFileDirective..text:sub(pos)
+        table.insert(includes, path)
     end
 
     local function textBlock(txt)
@@ -290,12 +301,12 @@ function parse(filename, text)
     while nextBlock() do 
         -- Just keep looping
     end
-    return table.concat(result)
+    return table.concat(result), includes
 end
 
 -- parse(example2)
 -- parse(example3)
 -- parse(example4)
 -- print(json({a = "hel\\lo"}))
--- parse(example5)
+-- print(parse("example5", example5))
 -- parse(example6)
