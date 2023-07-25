@@ -8,6 +8,7 @@
 import Foundation
 
 let L = LuaState(libraries: .all, encoding: .stringEncoding(.utf8))
+
 if CommandLine.arguments.count != 2 {
     fatalError("Syntax: templuater <path/to/templater.lua>")
 }

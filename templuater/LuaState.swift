@@ -306,7 +306,7 @@ extension UnsafeMutablePointer where Pointee == lua_State {
         return result
     }
 
-    func setfuncs(_ fns: [(String, lua_CFunction)], nup: Int32) {
+    func setfuncs(_ fns: [(String, lua_CFunction)], nup: Int32 = 0) {
         // It's easier to just do what luaL_setfuncs does rather than massage
         // fns in to a format that would work with it
         for (name, fn) in fns {
@@ -476,6 +476,10 @@ extension UnsafeMutablePointer where Pointee == lua_State {
         self.push(name)
         self.push(value)
         lua_settable(self, -3)
+    }
+
+    func pushGlobals() {
+        lua_rawgeti(self, LUA_REGISTRYINDEX, lua_Integer(LUA_RIDX_GLOBALS))
     }
 
     func requiref(name: UnsafePointer<CChar>!, function: lua_CFunction, global: Bool = true) {
