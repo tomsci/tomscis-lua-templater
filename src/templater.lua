@@ -188,7 +188,15 @@ function parse(filename, text)
     local function textBlock(txt)
         -- dbg("[TEXT]%s[/TEXT]\n", txt)
         if inprogress then
-            inprogress = string.format("%s write[=[\n%s]=] ", inprogress, txt)
+            -- In order to make the inprogress line count match, we have to use
+            -- a long string here, and because long strings eat prefixed
+            -- newline chars, we have to manually add that back to the output
+            -- if necessary.
+            if txt:match("^\n") then
+                inprogress = string.format("%s write('\\n'..[=[%s]=]) ", inprogress, txt)
+            else
+                inprogress = string.format("%s write[=[%s]=] ", inprogress, txt)
+            end
             -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
         else
             write(txt)

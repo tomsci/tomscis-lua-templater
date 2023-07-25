@@ -94,6 +94,24 @@ Then  & more text.
     assertEquals(parse(template), expected)
 end
 
+function test_line_numbers()
+    local template = [[
+1. text
+2. {%
+-- 3
+-- 4
+-- 5 %}
+6. {{
+"line 7"
+}} 8
+9 {% for i = 1, 1 do %}
+
+{% end %}
+{# 12
+]]
+    assertParseError(template, "test_line_numbers:12: Unterminated {#")
+end
+
 function main()
     for _, name in ipairs(tests) do
         io.stdout:write(string.format("Running %s\n", name))
