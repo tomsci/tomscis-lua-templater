@@ -50,8 +50,6 @@ These are written as `{# anything #}` and are ignored by the parser. Comment blo
 
 Anything that isn't delimited by one of the above block sequences is considered a text block, including whitespace and newlines. Text blocks appearing between a partial code block and the code block which completes it are combined in-place within the code, at any other time text blocks are copied unchanged to the output.
 
-A current implementation limitation is that text blocks combining with partial code blocks cannot contain the character sequence `[=[` or `]=]`.
-
 ## API
 
 There is no "special" syntax other than the block types described above. Everything else is just a Lua API which can be called inside code and expression blocks, and as such these APIs all conform to standard Lua syntax.

@@ -198,24 +198,17 @@ function parse(filename, text)
 
     env.include = function(path)
         local newText = parseAssert(readFile(path), "Failed to open file %s", path)
-        local origFileDirective = string.format('{%%file("%s", %d)%%}', filename, lineNumber)
-        local newFileDirective = string.format('{%%file("%s", 1)%%}', path)
+        local origFileDirective = string.format('{%% file(%q, %d) %%}', filename, lineNumber)
+        local newFileDirective = string.format('{%% file(%q, 1) %%}', path)
         text = text:sub(1, pos - 1)..newFileDirective..newText..origFileDirective..text:sub(pos)
         table.insert(includes, path)
     end
 
+    -- Does not use or modify pos. Updates lineNumber on exit.
     local function textBlock(txt)
-        -- dbg("[TEXT]%s[/TEXT]\n", txt)
+        -- dbg("[TEXT:%d]%s[/TEXT]\n", lineNumber, txt)
         if inprogress then
-            -- In order to make the inprogress line count match, we have to use
-            -- a long string here, and because long strings eat prefixed
-            -- newline chars, we have to manually add that back to the output
-            -- if necessary.
-            if txt:match("^\n") then
-                inprogress = string.format("%s write('\\n'..[=[%s]=]) ", inprogress, txt)
-            else
-                inprogress = string.format("%s write[=[%s]=] ", inprogress, txt)
-            end
+            inprogress = string.format("%s write(%q) ", inprogress, txt)
             -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
         else
             write(txt)
