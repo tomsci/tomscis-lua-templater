@@ -19,39 +19,40 @@
 // SOFTWARE.
 
 import Foundation
+import TiltC
 
-typealias LuaState = UnsafeMutablePointer<lua_State>
+public typealias LuaState = UnsafeMutablePointer<lua_State>
 
-protocol Pushable {
+public protocol Pushable {
     func push(state L: LuaState!)
 }
 
 extension Bool: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_pushboolean(L, self ? 1 : 0)
     }
 }
 
 extension Int: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_pushinteger(L, lua_Integer(self))
     }
 }
 
 extension Int32: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_pushinteger(L, lua_Integer(self))
     }
 }
 
 extension Int64: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_pushinteger(L, self)
     }
 }
 
 extension UInt64: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         if self < 0x8000000000000000 {
             lua_pushinteger(L, lua_Integer(self))
         } else {
@@ -61,13 +62,13 @@ extension UInt64: Pushable {
 }
 
 extension Double: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_pushnumber(L, self)
     }
 }
 
 extension Data: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         self.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> Void in
             let chars = buf.bindMemory(to: CChar.self)
             lua_pushlstring(L, chars.baseAddress, chars.count)
@@ -76,7 +77,7 @@ extension Data: Pushable {
 }
 
 extension Array: Pushable where Element: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_createtable(L, Int32(self.count), 0)
         for (i, val) in self.enumerated() {
             val.push(state: L)
@@ -86,7 +87,7 @@ extension Array: Pushable where Element: Pushable {
 }
 
 extension Dictionary: Pushable where Key: Pushable, Value: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         lua_createtable(L, 0, Int32(self.count))
         for (k, v) in self {
             L.push(k)
@@ -97,12 +98,12 @@ extension Dictionary: Pushable where Key: Pushable, Value: Pushable {
 }
 
 // That this should be necessary is a sad commentary on how string encodings are handled in Swift...
-enum ExtendedStringEncoding {
+public enum ExtendedStringEncoding {
     case stringEncoding(String.Encoding)
     case cfStringEncoding(CFStringEncodings)
 }
 
-extension String {
+public extension String {
     init?(data: Data, encoding: ExtendedStringEncoding) {
         switch encoding {
         case .stringEncoding(let enc):
@@ -129,23 +130,27 @@ extension String {
     }
 }
 
-extension UnsafeMutablePointer where Pointee == lua_State {
+public extension UnsafeMutablePointer where Pointee == lua_State {
 
     struct Libraries: OptionSet {
-        let rawValue: Int
+        public let rawValue: Int
 
-        static let package = Libraries(rawValue: 1)
-        static let coroutine = Libraries(rawValue: 2)
-        static let table = Libraries(rawValue: 4)
-        static let io = Libraries(rawValue: 8)
-        static let os = Libraries(rawValue: 16)
-        static let string = Libraries(rawValue: 32)
-        static let math = Libraries(rawValue: 64)
-        static let utf8 = Libraries(rawValue: 128)
-        static let debug = Libraries(rawValue: 256)
+        public init(rawValue: Int) {
+            self.rawValue = rawValue
+        }
 
-        static let all: Libraries = [ .package, .coroutine, .table, .io, .os, .string, .math, .utf8, .debug]
-        static let safe: Libraries = [ .coroutine, .table, .string, .math, .utf8]
+        public static let package = Libraries(rawValue: 1)
+        public static let coroutine = Libraries(rawValue: 2)
+        public static let table = Libraries(rawValue: 4)
+        public static let io = Libraries(rawValue: 8)
+        public static let os = Libraries(rawValue: 16)
+        public static let string = Libraries(rawValue: 32)
+        public static let math = Libraries(rawValue: 64)
+        public static let utf8 = Libraries(rawValue: 128)
+        public static let debug = Libraries(rawValue: 256)
+
+        public static let all: Libraries = [ .package, .coroutine, .table, .io, .os, .string, .math, .utf8, .debug]
+        public static let safe: Libraries = [ .coroutine, .table, .string, .math, .utf8]
     }
 
     init(libraries: Libraries) {
@@ -414,7 +419,7 @@ extension UnsafeMutablePointer where Pointee == lua_State {
             top = lua_gettop(L)
             lua_pushnil(L) // initial k
         }
-        func next() -> (Int32, Int32)? {
+        public func next() -> (Int32, Int32)? {
             lua_settop(L, top + 1) // Pop everything except k
             let t = lua_next(L, index)
             if t == 0 {

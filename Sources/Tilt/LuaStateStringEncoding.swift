@@ -20,7 +20,9 @@
 
 import Foundation
 
-extension LuaState {
+import TiltC
+
+public extension LuaState {
 
     init(libraries: Libraries, encoding: ExtendedStringEncoding) {
         self = LuaState(libraries: libraries)
@@ -77,7 +79,7 @@ extension LuaState {
 }
 
 extension String: Pushable {
-    func push(state L: LuaState!) {
+    public func push(state L: LuaState!) {
         L.push(self, encoding: L.getStringEncoding())
     }
 }

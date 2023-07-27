@@ -7,6 +7,9 @@
 
 import Foundation
 
+import Tilt
+import TiltC
+
 let L = LuaState(libraries: .all, encoding: .stringEncoding(.utf8))
 
 if CommandLine.arguments.count != 2 {
