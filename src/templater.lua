@@ -217,9 +217,9 @@ function parse(filename, text)
     end
 
     -- Note, pos must be updated before calls to codeBlock because this fn can
-    -- modify text (thanks to the include API)
+    -- modify text (thanks to the include API). Updates lineNumber.
     local function codeBlock(code)
-        -- dbg("[CODE]%s[/CODE]\n", code)
+        -- dbg("[CODE:%d]%s[/CODE]\n", lineNumber, code)
         local toEval = inprogress and inprogress..code or code
         local evalName = string.format("=%s", filename)
         -- Make line numbers in Lua errors correct by injecting newlines into the load data
@@ -233,8 +233,12 @@ function parse(filename, text)
             end
         else
             inprogress = nil
-            lineNumber = lineNumber + countNewlines(toEval)
+            local prevLineNumber = lineNumber
             fn()
+            -- This check is in case a file() directive has overridden the line number.
+            if lineNumber == prevLineNumber then
+                lineNumber = lineNumber + countNewlines(toEval)
+            end
         end
     end
 
@@ -279,12 +283,12 @@ function parse(filename, text)
             local endPos = parseAssert(text:find("%}", pos, true), "Unterminated {%")
             local code = text:sub(pos, endPos - 1)
             pos = endPos + 2
+            codeBlock(code)
             if text:sub(pos, pos) == "\n" then
                 -- Skip first newline after a code block
                 pos = pos + 1
                 lineNumber = lineNumber + 1
             end
-            codeBlock(code)
             return true
         end
 

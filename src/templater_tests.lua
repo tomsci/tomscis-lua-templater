@@ -55,7 +55,7 @@ function test_code_err()
 2. {% woop woop %}
 ]]
     -- Yes, code errors currently give you two locations
-    assertParseError(template, "test_code_err:3: test_code_err:3: syntax error near 'woop'")
+    assertParseError(template, "test_code_err:2: test_code_err:2: syntax error near 'woop'")
 end
 
 function test_nil_value()
