@@ -67,13 +67,50 @@ A sandboxed subset of the [standard Lua functions](https://www.lua.org/manual/5.
 * `os.date`, `os.time`
 * `pairs`
 * `pcall`
+* `rawequal`
+* `rawget`
+* `rawlen`
+* `rawset`
 * `select`
 * `string`
 * `table`
+* `tonumber`
 * `tostring`
 * `type`
 * `utf8`
 
+
+### `include(path)`
+
+Includes another template file into this template immediately after the current code block (for this reason, it's a good idea to not put anything else in a code block which contains an `include`). The contents of `path` will be evaluated as if they were part of the current file, and thus may contain text, code blocks etc.
+
+Example:
+
+`{% include "header.html" %}`
+
+Note the above example uses the "syntactic sugar" convenience form for a [Lua function call](https://www.lua.org/manual/5.4/manual.html#3.4.10), it could equally have been written `include("header.html")`.
+
+### `json(val)`
+
+Returns `val` converted to a JSON string. `val` can be any non-recursive Lua data structure containing only types representable in JSON. Empty tables are assumed to be arrays - to force a table to interpreted as a dict if empty, wrap it in a call to `json.dict()`.
+
+Example:
+
+`{{ json { a = "foo", b = "bar" } }}` returns (modulo whitespace) `{ "a": "foo", "b": "bar" }`
+
+Note the above example uses the "syntactic sugar" convenience form for a [Lua function call](https://www.lua.org/manual/5.4/manual.html#3.4.10), it could equally have been written `json({ a = "foo", b = "bar" })`.
+
+`{% foo = {}; write(json(foo)) %}` results in `[]`
+
+`{% foo = json.dict {}; write(json(foo)) %}` results in `{}`
+
+### `warning(format, ...)`
+
+Emits a warning message (which does not appear in the output).
+
+Example:
+
+`{% warning("TODO fix this template") %}`
 
 ### `write(val)`
 
@@ -90,27 +127,3 @@ Writes a format string to the output according to the rules of [`string.format`]
 Example:
 
 `{% writef("Hello %s!\n", "world") %}`
-
-### `json(val)`
-
-Returns `val` converted to a JSON string. `val` can be any non-recursive Lua data structure containing only types representable in JSON. Empty tables are assumed to be arrays - to force a table to interpreted as a dict if empty, wrap it in a call to `json.dict()`.
-
-Example:
-
-`{{ json { a = "foo", b = "bar" } }}` returns (modulo whitespace) `{ "a": "foo", "b": "bar" }`
-
-Note the above example uses the "syntactic sugar" convenience form for a [Lua function call](https://www.lua.org/manual/5.4/manual.html#3.4.10), it could equally have been written `json({ a = "foo", b = "bar" })`.
-
-`{% foo = {}; write(json(foo)) %}` results in `[]`
-
-`{% foo = json.dict {}; write(json(foo)) %}` results in `{}`
-
-### `include(path)`
-
-Includes another template file into this template immediately after the current code block (for this reason, it's a good idea to not put anything else in a code block which contains an `include`). The contents of `path` will be evaluated as if they were part of the current file, and thus may contain text, code blocks etc.
-
-Example:
-
-`{% include "header.html" %}`
-
-Note the above example uses the "syntactic sugar" convenience form for a [Lua function call](https://www.lua.org/manual/5.4/manual.html#3.4.10), it could equally have been written `include("header.html")`.

@@ -32,7 +32,7 @@ example5 = [[
 3.
 4.
 5.{% include "header.txt" %}
-6. Some more text.
+6. Some more text. {%warning("Should be line 6")%}
 ]]
 
 example6 = [[
@@ -88,10 +88,6 @@ function dbg(...)
     io.stdout:write(string.format(...))
 end
 
-function warning(...)
-    io.stderr:write(string.format(...))
-end
-
 json = setmetatable({
     dictHintMetatable = {},
     null = function() end, -- Magic placeholder
@@ -129,18 +125,20 @@ function makeSandbox()
             },
             pairs = pairs,
             pcall = pcall,
+            rawequal = rawequal,
+            rawget = rawget,
+            rawlen = rawlen,
+            rawset = rawset,
             select = select,
             string = string,
             table = table,
+            tonumber = tonumber,
             tostring = tostring,
             type = type,
             utf8 = utf8,
             xpcall = xpcall,
 
             -- Our helpers
-            write = write,
-            writef = writef,
-            dump = dump,
             json = json,
 
             -- Stuff from native side
@@ -158,8 +156,9 @@ function parse(filename, text)
     local inprogress = nil
     local pos = 1
     local lineNumber = 1 -- refers to start of inprogress, if set
-    local result = {}
+    local result = { n = 0 }
     local includes = {}
+    local warnings = {}
 
     local env = makeSandbox()
 
@@ -183,15 +182,21 @@ function parse(filename, text)
 
     local write = function(text)
         parseAssert(text ~= nil, "Cannot write() a nil value")
-        table.insert(result, text)
+        result.n = result.n + 1
+        result[n] = text
     end
     env.write = write
     env.writef = function(...)
-        table.insert(result, string.format(...))
+        write(string.format(...))
     end
-
+    env.warning = function(format, ...)
+        local line = debug.getinfo(2, "l").currentline
+        local str = string.format("%s:%d: "..format, filename, line, ...)
+        table.insert(warnings, str)
+        io.stderr:write(str.."\n")
+    end
     env.file = function(newPath, newLine)
-        -- dbg("FILE: %s:%d\n", newPath, newLine)
+        dbg("FILE: %s:%d\n", newPath, newLine)
         filename = newPath
         lineNumber = newLine
     end
@@ -201,7 +206,7 @@ function parse(filename, text)
         local origFileDirective = string.format('{%% file(%q, %d) %%}', filename, lineNumber)
         local newFileDirective = string.format('{%% file(%q, 1) %%}', path)
         text = text:sub(1, pos - 1)..newFileDirective..newText..origFileDirective..text:sub(pos)
-        table.insert(includes, path)
+        includes[path] = true
     end
 
     -- Does not use or modify pos. Updates lineNumber on exit.
@@ -306,12 +311,12 @@ function parse(filename, text)
     while nextBlock() do 
         -- Just keep looping
     end
-    return table.concat(result), includes
+    return table.concat(result), includes, warnings
 end
 
 -- parse(example2)
 -- parse(example3)
 -- parse(example4)
 -- print(json({a = "hel\\lo"}))
--- print(parse("example5", example5))
+-- parse("example5", example5)
 -- parse(example6)
