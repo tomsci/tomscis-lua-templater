@@ -153,6 +153,11 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         public static let safe: Libraries = [ .coroutine, .table, .string, .math, .utf8]
     }
 
+    public struct CallError: Error, Equatable, CustomStringConvertible {
+        public let error: String
+        public var description: String { error }
+    }
+
     init(libraries: Libraries) {
         self = luaL_newstate()
         requiref(name: "_G", function: luaopen_base)
@@ -498,5 +503,15 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     func requiref(name: UnsafePointer<CChar>!, function: lua_CFunction, global: Bool = true) {
         luaL_requiref(self, name, function, global ? 1 : 0)
         pop()
+    }
+
+    func pcall(nargs: Int32, nret: Int32) throws {
+        let err = lua_pcall(self, nargs, nret, 0)
+        if err != LUA_OK {
+            let errStr = tostring(-1, convert: true)!
+            pop()
+            print(errStr)
+            throw CallError(error: errStr)
+        }
     }
 }

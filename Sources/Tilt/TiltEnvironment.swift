@@ -34,14 +34,10 @@ public class TiltEnvironment {
         L.getglobal("parse")
         L.push(filename)
         L.push(contents)
-        let ret = lua_pcall(L, 2, 3, 0)
-        if ret == LUA_OK {
-            let result = L.tostring(1)!
-            let includes = L.tostringarray(2)!
-            let warnings = L.tostringarray(3)!
-            return ParseResult(text: result, includes: includes, warnings: warnings)
-        } else {
-            fatalError("DOOM: \(L.tostring(1)!)")
-        }
+        try L.pcall(nargs: 2, nret: 3)
+        let result = L.tostring(1)!
+        let includes = L.tostringarray(2)!
+        let warnings = L.tostringarray(3)!
+        return ParseResult(text: result, includes: includes, warnings: warnings)
     }
 }
