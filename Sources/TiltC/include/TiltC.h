@@ -134,4 +134,20 @@ static inline void* lua_getextraspace(lua_State* L) {
     return ((void *)((char *)(L) - LUA_EXTRASPACE));
 }
 
+int lua_gc0(lua_State* L, int what) {
+    return lua_gc(L, what);
+}
+
+int lua_gc1(lua_State* L, int what, int arg1) {
+    return lua_gc(L, what, arg1);
+}
+
+int lua_gc2(lua_State* L, int what, int arg1, int arg2) {
+    return lua_gc(L, what, arg1, arg2);
+}
+
+int lua_gc3(lua_State* L, int what, int arg1, int arg2, int arg3) {
+    return lua_gc(L, what, arg1, arg2, arg3);
+}
+
 #endif /* templuater_bridge_h */

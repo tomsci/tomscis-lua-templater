@@ -130,6 +130,21 @@ public extension String {
     }
 }
 
+fileprivate var typeDeallocators: [String: (UnsafeMutableRawPointer) -> Void] = [:]
+
+fileprivate func gcUserdata(_ L: LuaState!) -> Int32 {
+    let rawptr = lua_touserdata(L, 1)!
+    if luaL_getmetafield(L, 1, "__name") != LUA_TSTRING {
+        fatalError("Failed to get metatable name for a userdata being GC'd!")
+    }
+    let name = L.tostring(-1, encoding: .utf8)!
+    guard let deallocator = typeDeallocators[name] else {
+        fatalError("No deallocator defined for type \(name)!")
+    }
+    deallocator(rawptr)
+    return 0
+}
+
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
     struct Libraries: OptionSet {
@@ -202,6 +217,30 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         case function = 6 // LUA_TFUNCTION
         case userdata = 7 // LUA_TUSERDATA
         case thread = 8 // LUA_TTHREAD
+    }
+
+    enum WhatGarbage: Int32 {
+        case stop = 0
+        case restart = 1
+        case collect = 2
+    }
+
+    private enum MoreGarbage: Int32 {
+        case count = 3
+        case countb = 4
+        case isrunning = 9
+    }
+
+    func collectgarbage(_ what: WhatGarbage = .collect) {
+        lua_gc0(self, what.rawValue)
+    }
+
+    func collectorRunning() -> Bool {
+        return lua_gc0(self, MoreGarbage.isrunning.rawValue) != 0
+    }
+
+    func collectorCount() -> Int {
+        return Int(lua_gc0(self, MoreGarbage.count.rawValue)) * 1024 + Int(lua_gc0(self, MoreGarbage.countb.rawValue))
     }
 
     // Empty Optional is used for LUA_TNONE ie not a valid index
@@ -510,8 +549,58 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         if err != LUA_OK {
             let errStr = tostring(-1, convert: true)!
             pop()
-            print(errStr)
+            // print(errStr)
             throw CallError(error: errStr)
         }
+    }
+
+    private func getMetatableName<T>(for type: T.Type) -> String {
+        return "SwiftType_" + String(describing: type)
+    }
+
+    func registerMetatable<T>(for type: T.Type, functions: [String: lua_CFunction]) {
+        let tname = getMetatableName(for: T.self)
+        if luaL_newmetatable(self, tname) == 0 {
+            fatalError("Metatable for type \(tname) is already registered!")
+        }
+        assert(functions["__gc"] == nil, "__gc function for Swift userdata types is registered automatically")
+
+        for (name, fn) in functions {
+            lua_pushcfunction(self, fn)
+            lua_setfield(self, -2, name)
+        }
+
+        if functions["__index"] == nil {
+            lua_pushvalue(self, -1)
+            lua_setfield(self, -2, "__index")
+        }
+
+        typeDeallocators[tname] = { rawptr in
+            let typedPtr = rawptr.bindMemory(to: T.self, capacity: 1)
+            typedPtr.deinitialize(count: 1)
+        }
+        lua_pushcfunction(self, gcUserdata)
+        lua_setfield(self, -2, "__gc")
+
+        pop() // metatable
+    }
+
+    func pushUserdata<T>(_ val: T) {
+        let tname = getMetatableName(for: T.self)
+        if typeDeallocators[tname] == nil {
+            registerMetatable(for: T.self, functions: [:])
+        }
+        let udata = lua_newuserdatauv(self, MemoryLayout<T>.size, 0)!
+        let udataPtr = udata.bindMemory(to: T.self, capacity: 1)
+        udataPtr.initialize(to: val)
+        luaL_setmetatable(self, tname)
+    }
+
+    func touserdata<T>(_ index: Int32) -> T? {
+        guard let rawptr = luaL_testudata(self, index, getMetatableName(for: T.self)) else {
+            return nil
+        }
+        let typedPtr = rawptr.bindMemory(to: T.self, capacity: 1)
+        return typedPtr.pointee
     }
 }
