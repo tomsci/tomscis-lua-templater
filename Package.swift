@@ -32,6 +32,9 @@ let package = Package(
             name: "Tilt",
             dependencies: [
                 "TiltC",
+            ],
+            resources: [
+                .copy("src"),
             ]),
         .target(
             name: "TiltC",
