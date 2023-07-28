@@ -477,10 +477,18 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         lua_pop(self, nitems)
     }
 
+    func settop(_ top: Int32) {
+        lua_settop(self, top)
+    }
+
     func setfield<S, T>(_ name: S, _ value: T) where S: StringProtocol & Pushable, T: Pushable {
         self.push(name)
         self.push(value)
         lua_settable(self, -3)
+    }
+
+    func getglobal(_ name: UnsafePointer<CChar>) {
+        lua_getglobal(self, name)
     }
 
     func pushGlobals() {

@@ -152,6 +152,11 @@ function makeSandbox()
     return env
 end
 
+function parseFile(filename)
+    local text = readFile(filename)
+    return parse(filename, text)
+end
+
 function parse(filename, text)
     local inprogress = nil
     local pos = 1
@@ -183,12 +188,13 @@ function parse(filename, text)
     local write = function(text)
         parseAssert(text ~= nil, "Cannot write() a nil value")
         result.n = result.n + 1
-        result[n] = text
+        result[result.n] = text
     end
-    env.write = write
-    env.writef = function(...)
+    local writef = function(...)
         write(string.format(...))
     end
+    env.write = write
+    env.writef = writef
     env.warning = function(format, ...)
         local line = debug.getinfo(2, "l").currentline
         local str = string.format("%s:%d: "..format, filename, line, ...)
@@ -207,6 +213,10 @@ function parse(filename, text)
         local newFileDirective = string.format('{%% file(%q, 1) %%}', path)
         text = text:sub(1, pos - 1)..newFileDirective..newText..origFileDirective..text:sub(pos)
         includes[path] = true
+    end
+
+    env.video = function(path)
+        writef("TODO: video %q", path)
     end
 
     -- Does not use or modify pos. Updates lineNumber on exit.
