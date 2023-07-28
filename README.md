@@ -50,6 +50,46 @@ These are written as `{# anything #}` and are ignored by the parser. Comment blo
 
 Anything that isn't delimited by one of the above block sequences is considered a text block, including whitespace and newlines. Text blocks appearing between a partial code block and the code block which completes it are combined in-place within the code, at any other time text blocks are copied unchanged to the output.
 
+To escape a sequence that might otherwise be interpreted as a block delimeter, wrap in an expression block that evaluates a Lua string, for example:
+
+```
+{{"{%"}} Not actually a code block %}
+
+{{"{{"}} Not actually an expression block }}
+```
+
+Note it is easiest to escape just the starting block delimeter, as the ending delimiters do not need escaping in a text block.
+
+## "Macro-style" code blocks
+
+By combining a function definition with a partial code block it is possible to declare something that behaves a lot like a macro in other templating languages. For example:
+
+```
+{% function mymacro(arg1, arg2)
+    -- Maybe do something with args, then terminate this code block without
+    -- ending the function, to make this a partial code block which can be
+    -- combined with some text and expression blocks...
+%}
+    Arg 1 is: {{arg1}}
+    Arg 2 is: {{arg2}}
+{%
+    -- ...and now end the function, which completes the partial code block and
+    -- thereby completes the definition of 'mymacro()'
+end
+%}
+
+...
+
+{% mymacro("hello", 123) %}
+```
+
+The `mymacro()` code block above expands to:
+
+```
+    Arg 1 is: hello
+    Arg 2 is: 123
+```
+
 ## API
 
 There is no "special" syntax other than the block types described above. Everything else is just a Lua API which can be called inside code and expression blocks, and as such these APIs all conform to standard Lua syntax.
