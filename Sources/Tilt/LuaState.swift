@@ -39,7 +39,7 @@ extension Int: Pushable {
     }
 }
 
-extension Int32: Pushable {
+extension CInt: Pushable {
     public func push(state L: LuaState!) {
         lua_pushinteger(L, lua_Integer(self))
     }
@@ -78,7 +78,7 @@ extension Data: Pushable {
 
 extension Array: Pushable where Element: Pushable {
     public func push(state L: LuaState!) {
-        lua_createtable(L, Int32(self.count), 0)
+        lua_createtable(L, CInt(self.count), 0)
         for (i, val) in self.enumerated() {
             val.push(state: L)
             lua_rawseti(L, -2, lua_Integer(i + 1))
@@ -88,7 +88,7 @@ extension Array: Pushable where Element: Pushable {
 
 extension Dictionary: Pushable where Key: Pushable, Value: Pushable {
     public func push(state L: LuaState!) {
-        lua_createtable(L, 0, Int32(self.count))
+        lua_createtable(L, 0, CInt(self.count))
         for (k, v) in self {
             L.push(k)
             L.push(v)
@@ -132,7 +132,7 @@ public extension String {
 
 fileprivate var typeDeallocators: [String: (UnsafeMutableRawPointer) -> Void] = [:]
 
-fileprivate func gcUserdata(_ L: LuaState!) -> Int32 {
+fileprivate func gcUserdata(_ L: LuaState!) -> CInt {
     let rawptr = lua_touserdata(L, 1)!
     if luaL_getmetafield(L, 1, "__name") != LUA_TSTRING {
         fatalError("Failed to get metatable name for a userdata being GC'd!")
@@ -147,7 +147,7 @@ fileprivate func gcUserdata(_ L: LuaState!) -> Int32 {
 
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
-    struct Libraries: OptionSet {
+    public struct Libraries: OptionSet {
         public let rawValue: Int
 
         public init(rawValue: Int) {
@@ -205,8 +205,8 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    enum LuaType : Int32 {
-        // Annoyingly can't use LUA_TNIL etc here because the bridge exposes them as `var LUA_TNIL: Int32 { get }`
+    enum LuaType : CInt {
+        // Annoyingly can't use LUA_TNIL etc here because the bridge exposes them as `var LUA_TNIL: CInt { get }`
         // which is not acceptable for an enum (which requires the rawValue to be a literal)
         case nilType = 0 // LUA_TNIL
         case boolean = 1 // LUA_TBOOLEAN
@@ -219,13 +219,13 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         case thread = 8 // LUA_TTHREAD
     }
 
-    enum WhatGarbage: Int32 {
+    enum WhatGarbage: CInt {
         case stop = 0
         case restart = 1
         case collect = 2
     }
 
-    private enum MoreGarbage: Int32 {
+    private enum MoreGarbage: CInt {
         case count = 3
         case countb = 4
         case isrunning = 9
@@ -245,17 +245,17 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
     // Empty Optional is used for LUA_TNONE ie not a valid index
     // (although this doesn't offer any additional validity checks against passing a nonsense index)
-    func type(_ index: Int32) -> LuaType? {
+    func type(_ index: CInt) -> LuaType? {
         let t = lua_type(self, index)
         assert(t >= LUA_TNONE && t <= LUA_TTHREAD)
         return LuaType(rawValue: t)
     }
 
-    func isnone(_ index: Int32) -> Bool {
+    func isnone(_ index: CInt) -> Bool {
         return type(index) == nil
     }
 
-    func isnoneornil(_ index: Int32) -> Bool {
+    func isnoneornil(_ index: CInt) -> Bool {
         if let t = type(index) {
             return t == .nilType
         } else {
@@ -263,7 +263,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    func todata(_ index: Int32) -> Data? {
+    func todata(_ index: CInt) -> Data? {
         let L = self
         if type(index) == .string {
             var len: Int = 0
@@ -277,7 +277,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
     // If convert is true, any value that is not a string will be converted to
     // one (invoking __tostring metamethods if necessary)
-    func tostring(_ index: Int32, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
         if let data = todata(index) {
            return String(data: data, encoding: encoding)
         } else if convert {
@@ -292,13 +292,13 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    func tostring(_ index: Int32, encoding: String.Encoding, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, encoding: String.Encoding, convert: Bool = false) -> String? {
         return tostring(index, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    func toint(_ index: Int32) -> Int? {
+    func toint(_ index: CInt) -> Int? {
         let L = self
-        var isnum: Int32 = 0
+        var isnum: CInt = 0
         let ret = lua_tointegerx(L, index, &isnum)
         if isnum == 0 {
             return nil
@@ -307,9 +307,9 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    func tonumber(_ index: Int32) -> Double? {
+    func tonumber(_ index: CInt) -> Double? {
         let L = self
-        var isnum: Int32 = 0
+        var isnum: CInt = 0
         let ret = lua_tonumberx(L, index, &isnum)
         if isnum == 0 {
             return nil
@@ -318,12 +318,12 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    func toboolean(_ index: Int32) -> Bool {
+    func toboolean(_ index: CInt) -> Bool {
         let b = lua_toboolean(self, index)
         return b != 0
     }
 
-    func tostringarray(_ index: Int32, encoding: ExtendedStringEncoding, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, encoding: ExtendedStringEncoding, convert: Bool = false) -> [String]? {
         guard type(index) == .table else {
             return nil
         }
@@ -338,11 +338,11 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return result
     }
 
-    func tostringarray(_ index: Int32, encoding: String.Encoding, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, encoding: String.Encoding, convert: Bool = false) -> [String]? {
         return tostringarray(index, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    func getfield<T>(_ index: Int32, key: String, _ accessor: (Int32) -> T?) -> T? {
+    func getfield<T>(_ index: CInt, key: String, _ accessor: (CInt) -> T?) -> T? {
         let absidx = lua_absindex(self, index)
         let t = self.type(absidx)
         if t != .table && t != .userdata {
@@ -355,7 +355,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return result
     }
 
-    func setfuncs(_ fns: [(String, lua_CFunction)], nup: Int32 = 0) {
+    func setfuncs(_ fns: [(String, lua_CFunction)], nup: CInt = 0) {
         // It's easier to just do what luaL_setfuncs does rather than massage
         // fns in to a format that would work with it
         for (name, fn) in fns {
@@ -371,35 +371,35 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
     // Convenience dict fns (assumes key is an ascii string)
 
-    func toint(_ index: Int32, key: String) -> Int? {
+    func toint(_ index: CInt, key: String) -> Int? {
         return getfield(index, key: key, self.toint)
     }
 
-    func tonumber(_ index: Int32, key: String) -> Double? {
+    func tonumber(_ index: CInt, key: String) -> Double? {
         return getfield(index, key: key, self.tonumber)
     }
 
-    func toboolean(_ index: Int32, key: String) -> Bool {
+    func toboolean(_ index: CInt, key: String) -> Bool {
         return getfield(index, key: key, self.toboolean) ?? false
     }
 
-    func todata(_ index: Int32, key: String) -> Data? {
+    func todata(_ index: CInt, key: String) -> Data? {
         return getfield(index, key: key, self.todata)
     }
 
-    func tostring(_ index: Int32, key: String, encoding: String.Encoding, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, key: String, encoding: String.Encoding, convert: Bool = false) -> String? {
         return tostring(index, key: key, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    func tostring(_ index: Int32, key: String, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, key: String, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
         return getfield(index, key: key, { tostring($0, encoding: encoding, convert: convert) })
     }
 
-    func tostringarray(_ index: Int32, key: String, encoding: ExtendedStringEncoding, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, key: String, encoding: ExtendedStringEncoding, convert: Bool = false) -> [String]? {
         return getfield(index, key: key, { tostringarray($0, encoding: encoding, convert: convert) })
     }
 
-    func tostringarray(_ index: Int32, key: String, encoding: String.Encoding, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, key: String, encoding: String.Encoding, convert: Bool = false) -> [String]? {
         return tostringarray(index, key: key, encoding: .stringEncoding(encoding), convert: convert)
     }
 
@@ -407,11 +407,11 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
     private class IPairsIterator : Sequence, IteratorProtocol {
         let L: LuaState
-        let index: Int32
-        let top: Int32
+        let index: CInt
+        let top: CInt
         let requiredType: LuaState.LuaType?
         var i: lua_Integer
-        init(_ L: LuaState, _ index: Int32, _ requiredType: LuaState.LuaType?) {
+        init(_ L: LuaState, _ index: CInt, _ requiredType: LuaState.LuaType?) {
             precondition(requiredType != .nilType, "Cannot iterate with a required type of LUA_TNIL")
             precondition(L.type(index) == .table, "Cannot iterate something that isn't a table!")
             self.L = L
@@ -449,21 +449,21 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     // would result in:
     // --> 1 11
     // --> 2 22
-    func ipairs(_ index: Int32, requiredType: LuaType? = nil) -> some Sequence {
+    func ipairs(_ index: CInt, requiredType: LuaType? = nil) -> some Sequence {
         return IPairsIterator(self, index, requiredType)
     }
 
     class PairsIterator : Sequence, IteratorProtocol {
         let L: LuaState
-        let index: Int32
-        let top: Int32
-        init(_ L: LuaState, _ index: Int32) {
+        let index: CInt
+        let top: CInt
+        init(_ L: LuaState, _ index: CInt) {
             self.L = L
             self.index = lua_absindex(L, index)
             top = lua_gettop(L)
             lua_pushnil(L) // initial k
         }
-        public func next() -> (Int32, Int32)? {
+        public func next() -> (CInt, CInt)? {
             lua_settop(L, top + 1) // Pop everything except k
             let t = lua_next(L, index)
             if t == 0 {
@@ -488,7 +488,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     // --> b 2
     // --> c 3
     // --> a 1
-    func pairs(_ index: Int32) -> PairsIterator {
+    func pairs(_ index: CInt) -> PairsIterator {
         return PairsIterator(self, index)
     }
 
@@ -517,11 +517,11 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    func pop(_ nitems: Int32 = 1) {
+    func pop(_ nitems: CInt = 1) {
         lua_pop(self, nitems)
     }
 
-    func settop(_ top: Int32) {
+    func settop(_ top: CInt) {
         lua_settop(self, top)
     }
 
@@ -544,7 +544,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         pop()
     }
 
-    func pcall(nargs: Int32, nret: Int32) throws {
+    func pcall(nargs: CInt, nret: CInt) throws {
         let err = lua_pcall(self, nargs, nret, 0)
         if err != LUA_OK {
             let errStr = tostring(-1, convert: true)!
@@ -596,7 +596,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         luaL_setmetatable(self, tname)
     }
 
-    func touserdata<T>(_ index: Int32) -> T? {
+    func touserdata<T>(_ index: CInt) -> T? {
         guard let rawptr = luaL_testudata(self, index, getMetatableName(for: T.self)) else {
             return nil
         }

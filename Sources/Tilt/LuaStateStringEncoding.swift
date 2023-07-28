@@ -60,19 +60,19 @@ public extension LuaState {
         }
     }
 
-    func tostring(_ index: Int32, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, convert: Bool = false) -> String? {
         return tostring(index, encoding: getStringEncoding(), convert: convert)
     }
 
-    func tostringarray(_ index: Int32) -> [String]? {
+    func tostringarray(_ index: CInt) -> [String]? {
         return tostringarray(index, encoding: getStringEncoding())
     }
 
-    func tostring(_ index: Int32, key: String, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, key: String, convert: Bool = false) -> String? {
         return tostring(index, key: key, encoding: getStringEncoding(), convert: convert)
     }
 
-    func tostringarray(_ index: Int32, key: String, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, key: String, convert: Bool = false) -> [String]? {
         return tostringarray(index, key: key, encoding: getStringEncoding(), convert: convert)
     }
 
