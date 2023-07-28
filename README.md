@@ -46,6 +46,17 @@ An error will be returned if the expression evaluates to `nil` (because that is 
 
 These are written as `{# anything #}` and are ignored by the parser. Comment blocks can span multiple lines and can contain expression blocks and code blocks (which are ignored), but not other comment blocks.
 
+Within a code block, the normal Lua comment block syntax can also be used:
+
+```
+{% -- This is a Lua comment within a code block
+
+--[[
+This is multiline Lua comment.
+]]
+%}
+```
+
 ## Text blocks
 
 Anything that isn't delimited by one of the above block sequences is considered a text block, including whitespace and newlines. Text blocks appearing between a partial code block and the code block which completes it are combined in-place within the code, at any other time text blocks are copied unchanged to the output.
@@ -72,11 +83,11 @@ By combining a function definition with a partial code block it is possible to d
 %}
     Arg 1 is: {{arg1}}
     Arg 2 is: {{arg2}}
-{%
-    -- ...and now end the function, which completes the partial code block and
-    -- thereby completes the definition of 'mymacro()'
-end
-%}
+
+{# ...and now end the function, which completes the partial code block and
+thereby completes the definition of 'mymacro()' #}
+
+{% end %}
 
 ...
 
