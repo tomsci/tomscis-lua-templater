@@ -195,12 +195,13 @@ function parse(filename, text)
     end
     env.write = write
     env.writef = writef
-    env.warning = function(format, ...)
+    local warning = function(format, ...)
         local line = debug.getinfo(2, "l").currentline
         local str = string.format("%s:%d: "..format, filename, line, ...)
         table.insert(warnings, str)
         io.stderr:write(str.."\n")
     end
+    env.warning = warning
     env.file = function(newPath, newLine)
         dbg("FILE: %s:%d\n", newPath, newLine)
         filename = newPath
@@ -216,7 +217,8 @@ function parse(filename, text)
     end
 
     env.video = function(path)
-        writef("TODO: video %q", path)
+        warning("video API is not implemented yet")
+        writef("TODO: video(%q)", path)
     end
 
     -- Does not use or modify pos. Updates lineNumber on exit.
