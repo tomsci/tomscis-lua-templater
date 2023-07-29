@@ -129,6 +129,11 @@ static inline int lua_upvalueindex(int i) {
 #undef LUA_REGISTRYINDEX
 static const int LUA_REGISTRYINDEX = -LUAI_MAXSTACK - 1000;
 
+#undef luaL_getmetatable
+static inline int luaL_getmetatable(lua_State* L, const char* name) {
+    return lua_getfield(L, LUA_REGISTRYINDEX, name);
+}
+
 #undef lua_getextraspace
 static inline void* lua_getextraspace(lua_State* L) {
     return ((void *)((char *)(L) - LUA_EXTRASPACE));

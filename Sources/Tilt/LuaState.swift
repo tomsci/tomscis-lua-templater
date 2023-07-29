@@ -130,18 +130,10 @@ public extension String {
     }
 }
 
-fileprivate var typeDeallocators: [String: (UnsafeMutableRawPointer) -> Void] = [:]
-
 fileprivate func gcUserdata(_ L: LuaState!) -> CInt {
     let rawptr = lua_touserdata(L, 1)!
-    if luaL_getmetafield(L, 1, "__name") != LUA_TSTRING {
-        fatalError("Failed to get metatable name for a userdata being GC'd!")
-    }
-    let name = L.tostring(-1, encoding: .utf8)!
-    guard let deallocator = typeDeallocators[name] else {
-        fatalError("No deallocator defined for type \(name)!")
-    }
-    deallocator(rawptr)
+    let anyPtr = rawptr.bindMemory(to: Any.self, capacity: 1)
+    anyPtr.deinitialize(count: 1)
     return 0
 }
 
@@ -558,10 +550,9 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return "SwiftType_" + String(describing: type)
     }
 
-    func registerMetatable<T>(for type: T.Type, functions: [String: lua_CFunction]) {
-        let tname = getMetatableName(for: T.self)
-        if luaL_newmetatable(self, tname) == 0 {
-            fatalError("Metatable for type \(tname) is already registered!")
+    private func doRegisterMetatable(typeName: String, functions: [String: lua_CFunction]) {
+        if luaL_newmetatable(self, typeName) == 0 {
+            fatalError("Metatable for type \(typeName) is already registered!")
         }
         assert(functions["__gc"] == nil, "__gc function for Swift userdata types is registered automatically")
 
@@ -575,32 +566,37 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             lua_setfield(self, -2, "__index")
         }
 
-        typeDeallocators[tname] = { rawptr in
-            let typedPtr = rawptr.bindMemory(to: T.self, capacity: 1)
-            typedPtr.deinitialize(count: 1)
-        }
         lua_pushcfunction(self, gcUserdata)
         lua_setfield(self, -2, "__gc")
+    }
 
+    func registerMetatable<T>(for type: T.Type, functions: [String: lua_CFunction]) {
+        doRegisterMetatable(typeName: getMetatableName(for: type), functions: functions)
         pop() // metatable
     }
 
+    // All types are pushed as Any, so we can always extract them as Any.
     func pushUserdata<T>(_ val: T) {
         let tname = getMetatableName(for: T.self)
-        if typeDeallocators[tname] == nil {
-            registerMetatable(for: T.self, functions: [:])
+        let anyVal: Any = val
+        let udata = lua_newuserdatauv(self, MemoryLayout<Any>.size, 0)!
+        let udataPtr = udata.bindMemory(to: Any.self, capacity: 1)
+        udataPtr.initialize(to: anyVal)
+
+        if luaL_getmetatable(self, tname) == LuaType.nilType.rawValue {
+            pop()
+            doRegisterMetatable(typeName: tname, functions: [:])
         }
-        let udata = lua_newuserdatauv(self, MemoryLayout<T>.size, 0)!
-        let udataPtr = udata.bindMemory(to: T.self, capacity: 1)
-        udataPtr.initialize(to: val)
-        luaL_setmetatable(self, tname)
+        lua_setmetatable(self, -2) // pops metatable
     }
 
     func touserdata<T>(_ index: CInt) -> T? {
-        guard let rawptr = luaL_testudata(self, index, getMetatableName(for: T.self)) else {
+        // We don't need to check the metatable name with eg luaL_testudata because we store everything as Any
+        // so the final as? check takes care of that
+        guard let rawptr = lua_touserdata(self, index) else {
             return nil
         }
-        let typedPtr = rawptr.bindMemory(to: T.self, capacity: 1)
-        return typedPtr.pointee
+        let typedPtr = rawptr.bindMemory(to: Any.self, capacity: 1)
+        return typedPtr.pointee as? T
     }
 }
