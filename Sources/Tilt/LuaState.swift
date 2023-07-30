@@ -568,7 +568,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    private func getMetatableName<T>(for type: T.Type) -> String {
+    private func getMetatableName(for type: Any.Type) -> String {
         return "SwiftType_" + String(describing: type)
     }
 
@@ -598,14 +598,15 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     }
 
     // All types are pushed as Any, so we can always extract them as Any.
-    func pushUserdata<T>(_ val: T) {
-        let tname = getMetatableName(for: T.self)
+    func pushUserdata(_ val: Any) {
+        let tname = getMetatableName(for: Swift.type(of: val))
         let anyVal: Any = val
         let udata = lua_newuserdatauv(self, MemoryLayout<Any>.size, 0)!
         let udataPtr = udata.bindMemory(to: Any.self, capacity: 1)
         udataPtr.initialize(to: anyVal)
 
         if luaL_getmetatable(self, tname) == LuaType.nilType.rawValue {
+            print("Implicitly registering empty metatable for type \(tname)")
             pop()
             doRegisterMetatable(typeName: tname, functions: [:])
         }
