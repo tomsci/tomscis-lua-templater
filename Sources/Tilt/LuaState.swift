@@ -137,6 +137,12 @@ fileprivate func gcUserdata(_ L: LuaState!) -> CInt {
     return 0
 }
 
+fileprivate func tracebackFn(_ L: LuaState!) -> CInt {
+    let msg = L.tostring(-1)
+    luaL_traceback(L, L, msg, 0)
+    return 1
+}
+
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
     public struct Libraries: OptionSet {
@@ -413,7 +419,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             i = 0
         }
         func next() -> lua_Integer? {
-            lua_settop(L, top)
+            L.settop(top)
             i = i + 1
             let t = lua_rawgeti(L, index, i)
             if let requiredType = self.requiredType {
@@ -427,7 +433,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             return i
         }
         deinit {
-            lua_settop(L, top)
+            L.settop(top)
         }
     }
 
@@ -456,7 +462,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             lua_pushnil(L) // initial k
         }
         public func next() -> (CInt, CInt)? {
-            lua_settop(L, top + 1) // Pop everything except k
+            L.settop(top + 1) // Pop everything except k
             let t = lua_next(L, index)
             if t == 0 {
                 // No more items
@@ -465,7 +471,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             return (top + 1, top + 2) // k and v indexes
         }
         deinit {
-            lua_settop(L, top)
+            L.settop(top)
         }
     }
 
@@ -513,6 +519,10 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         lua_pop(self, nitems)
     }
 
+    func gettop() -> CInt {
+        return lua_gettop(self)
+    }
+
     func settop(_ top: CInt) {
         lua_settop(self, top)
     }
@@ -536,8 +546,20 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         pop()
     }
 
-    func pcall(nargs: CInt, nret: CInt) throws {
-        let err = lua_pcall(self, nargs, nret, 0)
+    func pcall(nargs: CInt, nret: CInt, traceback: Bool = true) throws {
+        let index: CInt
+        if traceback {
+            index = gettop() - nargs
+            lua_pushcfunction(self, tracebackFn)
+            lua_insert(self, index) // Move traceback before nargs and fn
+        } else {
+            index = 0
+        }
+        let err = lua_pcall(self, nargs, nret, index)
+        if traceback {
+            // Keep the stack balanced
+            lua_remove(self, index)
+        }
         if err != LUA_OK {
             let errStr = tostring(-1, convert: true)!
             pop()

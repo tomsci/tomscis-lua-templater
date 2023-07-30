@@ -9,7 +9,7 @@ import Foundation
 import TiltC
 
 public class TiltEnvironment {
-    let L: LuaState
+    public let L: LuaState
     let srcPath = Bundle.module.url(forResource: "src", withExtension: nil)!
 
     public init() {

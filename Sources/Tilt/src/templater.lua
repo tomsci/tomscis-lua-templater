@@ -88,6 +88,12 @@ function dbg(...)
     io.stdout:write(string.format(...))
 end
 
+function dump(...)
+    require("init_dump")
+    -- That will overwrite this impl
+    return dump(...)
+end
+
 json = setmetatable({
     dictHintMetatable = {},
     null = function() end, -- Magic placeholder
@@ -95,9 +101,6 @@ json = setmetatable({
         return setmetatable(val or {}, json.dictHintMetatable)
     end,
     encode = function(val)
-        if dump == nil then
-            require("init_dump")
-        end
         return dump(val, "json")
     end,
 }, {
