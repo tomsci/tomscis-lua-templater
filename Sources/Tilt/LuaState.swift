@@ -143,6 +143,71 @@ fileprivate func tracebackFn(_ L: LuaState!) -> CInt {
     return 1
 }
 
+public enum LuaType : CInt {
+    // Annoyingly can't use LUA_TNIL etc here because the bridge exposes them as `var LUA_TNIL: CInt { get }`
+    // which is not acceptable for an enum (which requires the rawValue to be a literal)
+    case nilType = 0 // LUA_TNIL
+    case boolean = 1 // LUA_TBOOLEAN
+    case lightuserdata = 2 // LUA_TLIGHTUSERDATA
+    case number = 3 // LUA_TNUMBER
+    case string = 4 // LUA_STRING
+    case table = 5 // LUA_TTABLE
+    case function = 6 // LUA_TFUNCTION
+    case userdata = 7 // LUA_TUSERDATA
+    case thread = 8 // LUA_TTHREAD
+}
+
+public struct LuaStringRef {
+    let L: LuaState!
+    let index: CInt
+
+    public func toString(encoding: ExtendedStringEncoding = .stringEncoding(.utf8)) -> String? {
+        return L.tostring(index, encoding: encoding)
+    }
+
+    public func toData() -> Data {
+        return L.todata(index)! // Definitely won't error (assuming index still valid) as type has already been checked
+    }
+}
+
+public struct LuaTableRef {
+    let L: LuaState!
+    let index: CInt
+
+    public func toArray() -> [Any]? {
+        var result: [Any] = []
+        for _ in L.ipairs(index) {
+            if let value = L.toany(-1) {
+                result.append(value)
+            } else {
+                print("Encountered value not representable as Any during array iteration")
+                return nil
+            }
+        }
+        return result
+    }
+
+    public func toDict() -> [AnyHashable: Any]? {
+        var result: [AnyHashable: Any] = [:]
+        for (kidx, vidx) in L.pairs(index) {
+            if let k = L.toany(kidx),
+               let kh = k as? AnyHashable,
+               let v = L.toany(vidx) {
+                result[kh] = v
+            } else {
+                print("Encountered value not representable as Any[Hashable] during dict iteration")
+                return nil
+            }
+        }
+        return result
+    }
+}
+
+public struct LuaCallError: Error, Equatable, CustomStringConvertible {
+    public let error: String
+    public var description: String { error }
+}
+
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
     public struct Libraries: OptionSet {
@@ -164,11 +229,6 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
         public static let all: Libraries = [ .package, .coroutine, .table, .io, .os, .string, .math, .utf8, .debug]
         public static let safe: Libraries = [ .coroutine, .table, .string, .math, .utf8]
-    }
-
-    public struct CallError: Error, Equatable, CustomStringConvertible {
-        public let error: String
-        public var description: String { error }
     }
 
     init(libraries: Libraries) {
@@ -201,20 +261,6 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         if libraries.contains(.debug) {
             requiref(name: "debug", function: luaopen_debug)
         }
-    }
-
-    enum LuaType : CInt {
-        // Annoyingly can't use LUA_TNIL etc here because the bridge exposes them as `var LUA_TNIL: CInt { get }`
-        // which is not acceptable for an enum (which requires the rawValue to be a literal)
-        case nilType = 0 // LUA_TNIL
-        case boolean = 1 // LUA_TBOOLEAN
-        case lightuserdata = 2 // LUA_TLIGHTUSERDATA
-        case number = 3 // LUA_TNUMBER
-        case string = 4 // LUA_STRING
-        case table = 5 // LUA_TTABLE
-        case function = 6 // LUA_TFUNCTION
-        case userdata = 7 // LUA_TUSERDATA
-        case thread = 8 // LUA_TTHREAD
     }
 
     enum WhatGarbage: CInt {
@@ -401,15 +447,76 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return tostringarray(index, key: key, encoding: .stringEncoding(encoding), convert: convert)
     }
 
+    func toany(_ index: CInt) -> Any? {
+        guard let t = type(index) else {
+            return nil
+        }
+        switch (t) {
+        case .nilType:
+            return nil
+        case .boolean:
+            return toboolean(index)
+        case .lightuserdata:
+            return lua_topointer(self, index)
+        case .number:
+            if let intVal = toint(index) {
+                return intVal
+            } else {
+                return tonumber(index)
+            }
+        case .string:
+            return LuaStringRef(L: self, index: index)
+        case .table:
+            return LuaTableRef(L: self, index: index)
+        case .function:
+            // Not going to attempt generic callables just yet...
+            if let fn = lua_tocfunction(self, index) {
+                return fn
+            }
+        case .userdata:
+            return touserdata(index)
+        case .thread:
+            return lua_tothread(self, index)
+        }
+        print("Unhandled type in toany!")
+        return nil
+    }
+
+    func pushany(_ value: Any?) {
+        guard let value else {
+            pushnil()
+            return
+        }
+        switch value {
+        case let pushable as Pushable:
+            push(pushable)
+        case let array as Array<Any>:
+            lua_createtable(self, CInt(array.count), 0)
+            for (i, val) in array.enumerated() {
+                pushany(val)
+                lua_rawseti(self, -2, lua_Integer(i + 1))
+            }
+        case let dict as Dictionary<AnyHashable, Any>:
+            lua_createtable(self, 0, CInt(dict.count))
+            for (k, v) in dict {
+                pushany(k)
+                pushany(v)
+                lua_settable(self, -3)
+            }
+        default:
+            pushUserdata(value)
+        }
+    }
+
     // iterators
 
     private class IPairsIterator : Sequence, IteratorProtocol {
         let L: LuaState
         let index: CInt
         let top: CInt
-        let requiredType: LuaState.LuaType?
+        let requiredType: LuaType?
         var i: lua_Integer
-        init(_ L: LuaState, _ index: CInt, _ requiredType: LuaState.LuaType?) {
+        init(_ L: LuaState, _ index: CInt, _ requiredType: LuaType?) {
             precondition(requiredType != .nilType, "Cannot iterate with a required type of LUA_TNIL")
             precondition(L.type(index) == .table, "Cannot iterate something that isn't a table!")
             self.L = L
@@ -564,7 +671,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             let errStr = tostring(-1, convert: true)!
             pop()
             // print(errStr)
-            throw CallError(error: errStr)
+            throw LuaCallError(error: errStr)
         }
     }
 
@@ -621,5 +728,23 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
         let typedPtr = rawptr.bindMemory(to: Any.self, capacity: 1)
         return typedPtr.pointee as? T
+    }
+
+    func convertThrowToError(_ block: () throws -> CInt) -> CInt {
+        var nret: CInt = 0
+        var errored = false
+        do {
+            nret = try block()
+        } catch {
+            errored = true
+            self.push("Swift error: \(String(describing: error))")
+        }
+        if errored {
+            // Be careful not to leave a String (or anything else) in the stack frame here, because it won't get cleaned up,
+            // hence why we push the string in the catch block above.
+            return lua_error(self)
+        } else {
+            return nret
+        }
     }
 }
