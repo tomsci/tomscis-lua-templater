@@ -531,6 +531,8 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         switch value {
         case let pushable as Pushable:
             push(pushable)
+        case let str as String: // HACK for _NSCFString not being Pushable??
+            push(str, encoding: .utf8)
         case let array as Array<Any>:
             lua_createtable(self, CInt(array.count), 0)
             for (i, val) in array.enumerated() {
@@ -545,7 +547,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
                 lua_settable(self, -3)
             }
         default:
-            pushUserdata(value)
+            pushuserdata(value)
         }
     }
 
@@ -688,6 +690,10 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
+    func push(_ fn: lua_CFunction) {
+        lua_pushcfunction(self, fn)
+    }
+
     func pop(_ nitems: CInt = 1) {
         lua_pop(self, nitems)
     }
@@ -706,10 +712,12 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         lua_settable(self, -3)
     }
 
-    func getglobal(_ name: UnsafePointer<CChar>) {
-        lua_getglobal(self, name)
+    @discardableResult
+    func getglobal(_ name: UnsafePointer<CChar>) -> LuaType {
+        return LuaType(rawValue: lua_getglobal(self, name))!
     }
 
+    /// Pushes the globals table (`_G`) onto the stack.
     func pushGlobals() {
         lua_rawgeti(self, LUA_REGISTRYINDEX, lua_Integer(LUA_RIDX_GLOBALS))
     }
@@ -732,6 +740,8 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     ///   full stack trace.
     /// - throws: `LuaCallError` if a Lua error is raised during the execution
     ///   of the function.
+    /// - Precondition: The top of the stack must contain a function and `nargs`
+    ///   arguments.
     func pcall(nargs: CInt, nret: CInt, traceback: Bool = true) throws {
         let index: CInt
         if traceback {
@@ -752,6 +762,84 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             // print(errStr)
             throw LuaCallError(error: errStr)
         }
+    }
+
+    /// Convenience zero-result wrapper around `pcall(nargs:nret:traceback)`
+    ///
+    /// Make a protected call to a Lua function that must already be pushed
+    /// onto the stack. Each of `arguments` is pushed using `pushany()`. The
+    /// function is popped from the stack and any results are discarded.
+    ///
+    /// - Parameter arguments: Arguments to pass to the Lua function.
+    /// - Parameter traceback: If true, any errors thrown will include a
+    ///   full stack trace.
+    /// - throws: `LuaCallError` if a Lua error is raised during the execution
+    ///   of the function.
+    /// - Precondition: The value at the top of the stack must refer to a Lua
+    ///   function.
+    func pcall(arguments: Any..., traceback: Bool = true) throws {
+        for arg in arguments {
+            pushany(arg)
+        }
+        try pcall(nargs: CInt(arguments.count), nret: 0, traceback: traceback)
+    }
+
+    /// Convenience one-result wrapper around `pcall(nargs:nret:traceback)`
+    ///
+    /// Make a protected call to a Lua function that must already be pushed
+    /// onto the stack. Each of `arguments` is pushed using `pushany()`. The
+    /// function is popped from the stack. All results are popped from the stack
+    /// and the first one is converted to `T` using `tovalue<T>`. `nil` is
+    /// returned if the result could not be converted to `T`.
+    ///
+    /// - Parameter arguments: Arguments to pass to the Lua function.
+    /// - Parameter traceback: If true, any errors thrown will include a
+    ///   full stack trace.
+    /// - Result: The first result of the function, converted if possible to a
+    ///   `T`.
+    /// - throws: `LuaCallError` if a Lua error is raised during the execution
+    ///   of the function.
+    /// - Precondition: The value at the top of the stack must refer to a Lua
+    ///   function.
+    func pcall<T>(arguments: Any..., traceback: Bool = true) throws -> T? {
+        for arg in arguments {
+            pushany(arg)
+        }
+        try pcall(nargs: CInt(arguments.count), nret: 1, traceback: traceback)
+        let result: T? = tovalue(-1)
+        pop(1)
+        return result
+    }
+
+    /// Attempt to convert the value at the given stack index to type `T`.
+    ///
+    /// The types of value that are convertible are:
+    /// * `number` converts to `Int` if representable, otherwise `Double`
+    /// * `boolean` converts to `Bool`
+    /// * `thread` converts to `LuaState`
+    /// * `string` converts to either `String` or `Data` (based on which of
+    ///   those `T` is).
+    /// * `userdata` any conversion that `as?` can perform on an `Any` referring
+    ///   to that type.
+    func tovalue<T>(_ index: CInt) -> T? {
+        let value = toany(index)
+        if let directCast = value as? T {
+            return directCast
+        } else if let ref = value as? LuaStringRef {
+            if T.self == String.self {
+                return ref.toString(encoding:.stringEncoding(.utf8)) as? T
+            } else /*if T.self == Data.self*/ {
+                return ref.toData() as? T
+            }
+        } else if let ref = value as? LuaTableRef {
+            // TODO this is a bit broken, LuaXyzRefs in the Array/Dict won't get expanded...
+            if T.self == Array<Any>.self {
+                return ref.toArray() as? T
+            } else if T.self == Dictionary<AnyHashable, Any>.self {
+                return ref.toDict() as? T
+            }
+        }
+        return nil
     }
 
     private func getMetatableName(for type: Any.Type) -> String {
@@ -783,8 +871,18 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         pop() // metatable
     }
 
-    // All types are pushed as Any, so we can always extract them as Any.
-    func pushUserdata(_ val: Any) {
+    /// Push any value representable using `Any` onto the stack as a `userdata`.
+    ///
+    /// From a lifetime perspective, this function behaves as if `val` were
+    /// assigned to another variable of type `Any`, and when the Lua userdata is
+    /// garbage collected, this variable goes out of scope.
+    ///
+    /// - Parameter val: The value to push onto the Lua stack.
+    /// - Note: This function always pushes a `userdata` - if `val` represents
+    ///   any other type (for example, an integer) it will not be converted to
+    ///   that type in Lua. Use `pushany()` instead to automatically convert
+    ///   types to their Lua native representation where possible.
+    func pushuserdata(_ val: Any) {
         let tname = getMetatableName(for: Swift.type(of: val))
         let anyVal: Any = val
         let udata = lua_newuserdatauv(self, MemoryLayout<Any>.size, 0)!
@@ -809,6 +907,12 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return typedPtr.pointee as? T
     }
 
+    /// Call `block` wrapped in a `do { ... } catch {}` and convert any Swift
+    /// errors into a `lua_error()` call.
+    ///
+    /// - Returns: The result of `block` if there was no error. On error,
+    ///   converts the error to a string then calls `lua_error()` (and therefore
+    ///   does not return).
     func convertThrowToError(_ block: () throws -> CInt) -> CInt {
         var nret: CInt = 0
         var errored = false
