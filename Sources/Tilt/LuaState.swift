@@ -217,9 +217,10 @@ public struct LuaTableRef {
     }
 }
 
-public struct LuaCallError: Error, Equatable, CustomStringConvertible {
+public struct LuaCallError: Error, Equatable, CustomStringConvertible, LocalizedError {
     public let error: String
     public var description: String { error }
+    public var errorDescription: String? { error }
 }
 
 public extension UnsafeMutablePointer where Pointee == lua_State {

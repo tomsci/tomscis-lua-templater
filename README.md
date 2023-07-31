@@ -6,7 +6,7 @@ Templates are a combination of text (which is copied verbatim to the output) and
 
 These are the core of the templater. Code blocks are written in [Lua 5.4](https://www.lua.org/manual/5.4/manual.html) and can make use of any of the APIs described below. Crucially, code blocks may be fragments of Lua that are not by themselves a complete Lua block, and these may be combined with text and other blocks to form a valid Lua block. Such blocks can include control structures (such as loops) which can make text blocks appear in the output multiple times.
 
-Code blocks are written as `{% ... %}` and can span multiple lines. They do not expand to anything, unless they contain code which calls `write()`.  All code blocks in a given file share an environment, meaning a block may refer to a variable constructed by an earlier code block. Variables are not shared between files.
+Code blocks are written as `{% ... %}` and can span multiple lines. They do not expand to anything, unless they contain code which calls `write()`.  All code blocks in a given parse operation share an environment, meaning a block may refer to a variable constructed by an earlier code block. Variables are not shared between parse operations.
 
 For example, a simple code block would be:
 
@@ -61,7 +61,7 @@ This is multiline Lua comment.
 
 Anything that isn't delimited by one of the above block sequences is considered a text block, including whitespace and newlines. Text blocks appearing between a partial code block and the code block which completes it are combined in-place within the code, at any other time text blocks are copied unchanged to the output.
 
-To escape a sequence that might otherwise be interpreted as a block delimeter, wrap in an expression block that evaluates a Lua string, for example:
+To escape a sequence that might otherwise be interpreted as a block delimiter, wrap in an expression block that evaluates a Lua string, for example:
 
 ```
 {{"{%"}} Not actually a code block %}
