@@ -184,10 +184,21 @@ function parse(filename, text)
         end
     end
 
+    local function checkedToString(val)
+        local t = type(val)
+        if t == "userdata" or t == "table" then
+            -- It's an error if it doesn't have a metatable with a __tostring
+            if getmetatable(val).__tostring == nil then
+                parseError("Cannot stringify a raw table or userdata %s", dump(val))
+            end
+        end
+        return tostring(val)
+    end
+
     local write = function(text)
         parseAssert(text ~= nil, "Cannot write() a nil value")
         result.n = result.n + 1
-        result[result.n] = text
+        result[result.n] = checkedToString(text)
     end
     local writef = function(...)
         write(string.format(...))
