@@ -130,10 +130,17 @@ A sandboxed subset of the [standard Lua functions](https://www.lua.org/manual/5.
 * `type`
 * `utf8`
 
+### `eval(text)`
+
+Add `text` immediately after the current code block, at which point it will be evaluated and any special blocks will be expanded. Because the evaluation is delayed until the current code block is exited, it's a good idea to not put anything else in a code block which contains an `eval()`.
+
+Example:
+
+`{% eval(foo.bar()) %}`
 
 ### `include(path)`
 
-Includes another template file into this template immediately after the current code block (for this reason, it's a good idea to not put anything else in a code block which contains an `include`). The contents of `path` will be evaluated as if they were part of the current file, and thus may contain text, code blocks etc.
+Includes another template file into this template immediately after the current code block, with the same semantics and caveats as for [`eval(text)`](#evaltext).
 
 Example:
 

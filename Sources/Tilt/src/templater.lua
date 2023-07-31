@@ -59,18 +59,6 @@ function countNewlines(text)
     return result
 end
 
-if site == nil then
-    site = {
-        allposts = {
-            { "1Para1", "1Para2", "1Para3" },
-            { "2Para1", "2Para2", "2Para3" },
-            { "3Para1", "3Para2", "3Para3" },
-        },
-    }
-    function site.posts()
-        return makeArrayIterator(site.allposts)
-    end
-end
 
 if readFile == nil then
     function readFile(path)
@@ -109,6 +97,8 @@ json = setmetatable({
     end
 })
 
+local _context
+
 function makeSandbox()
     local env = {}
     setmetatable(env, {
@@ -144,15 +134,21 @@ function makeSandbox()
             -- Our helpers
             json = json,
 
-            -- Stuff from native side
-            site = site,
-
             -- Test
-            bar = bar,
-            posts = posts,
+            -- bar = bar,
+            -- posts = posts,
         }
     })
+    if _context then
+        for k, v in pairs(_context) do
+            env[k] = v
+        end
+    end
     return env
+end
+
+function setContext(newContext)
+    _context = newContext
 end
 
 function parseFile(filename)
@@ -211,11 +207,15 @@ function parse(filename, text)
         lineNumber = newLine
     end
 
+    env.eval = function(newText)
+        text = text:sub(1, pos - 1)..newText..text:sub(pos)
+    end
+
     env.include = function(path)
         local newText = parseAssert(readFile(path), "Failed to open file %s", path)
         local origFileDirective = string.format('{%% file(%q, %d) %%}', filename, lineNumber)
         local newFileDirective = string.format('{%% file(%q, 1) %%}', path)
-        text = text:sub(1, pos - 1)..newFileDirective..newText..origFileDirective..text:sub(pos)
+        env.eval(newFileDirective..newText..origFileDirective)
         includes[path] = true
     end
 

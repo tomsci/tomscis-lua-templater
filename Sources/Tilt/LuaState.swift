@@ -21,6 +21,19 @@
 import Foundation
 import TiltC
 
+/// Provides swift wrappers for the underlying `lua_State` C APIs.
+///
+/// Due to `LuaState` being an `extension` to `UnsafeMutablePointer<lua_State>`
+/// it can be either constructed using the explicit constructor provided, or
+/// any C `lua_State` obtained from anywhere can be treated as a `LuaState`
+/// Swift object.
+///
+/// Usage
+/// =====
+///
+///     let state = LuaState(libraries: .all)
+///     state.push(1234)
+///     assert(state.toint(-1)! == 1234)
 public typealias LuaState = UnsafeMutablePointer<lua_State>
 
 public protocol Pushable {
@@ -143,6 +156,7 @@ fileprivate func tracebackFn(_ L: LuaState!) -> CInt {
     return 1
 }
 
+/// A Swift enum of the Lua types.
 public enum LuaType : CInt {
     // Annoyingly can't use LUA_TNIL etc here because the bridge exposes them as `var LUA_TNIL: CInt { get }`
     // which is not acceptable for an enum (which requires the rawValue to be a literal)
@@ -231,9 +245,22 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         public static let safe: Libraries = [ .coroutine, .table, .string, .math, .utf8]
     }
 
+    /// Create a new `LuaState`.
+    ///
+    ///     let state = LuaState(libraries: .all)
+    ///
+    ///     // is equivalent to:
+    ///     let state = luaL_newstate()
+    ///     luaL_openlibs(state)
+    ///
+    /// - Parameter libraries: Which of the standard libraries to open.
     init(libraries: Libraries) {
         self = luaL_newstate()
         requiref(name: "_G", function: luaopen_base)
+        openLibraries(libraries)
+    }
+
+    func openLibraries(_ libraries: Libraries) {
         if libraries.contains(.package) {
             requiref(name: "package", function: luaopen_package)
         }
@@ -283,12 +310,15 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return lua_gc0(self, MoreGarbage.isrunning.rawValue) != 0
     }
 
+    /// Returns the total amount of memory in bytes that the Lua state is using.
     func collectorCount() -> Int {
         return Int(lua_gc0(self, MoreGarbage.count.rawValue)) * 1024 + Int(lua_gc0(self, MoreGarbage.countb.rawValue))
     }
 
-    // Empty Optional is used for LUA_TNONE ie not a valid index
-    // (although this doesn't offer any additional validity checks against passing a nonsense index)
+    /// Get the type of the value at the given index.
+    ///
+    /// - Parameter index: The stack index.
+    /// - Returns: the type of the value in the given valid index, or `nil` for a non-valid but acceptable index.
     func type(_ index: CInt) -> LuaType? {
         let t = lua_type(self, index)
         assert(t >= LUA_TNONE && t <= LUA_TTHREAD)
@@ -319,8 +349,19 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    // If convert is true, any value that is not a string will be converted to
-    // one (invoking __tostring metamethods if necessary)
+    /// Convert the value at the given stack index into a Swift String
+    ///
+    /// If the value is is not a Lua string and `convert` is false, or if the
+    /// string data cannot be converted to the specified encoding, this returns
+    /// `nil`. If `convert` is true, `nil` will only be returned if the string
+    /// failed to be decoded using `encoding`.
+    ///
+    /// - Parameter index: The stack index.
+    /// - Parameter encoding: The encoding to use to decode the string data.
+    /// - Parameter convert: If true and the value at the given index is not a
+    ///   Lua string, it will be converted to a string (invoking `__tostring`
+    ///   metamethods if necessary) before being decoded.
+    /// - Returns: the value as a String, or `nil` if it could not be converted.
     func tostring(_ index: CInt, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
         if let data = todata(index) {
            return String(data: data, encoding: encoding)
@@ -544,16 +585,35 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    // Return a for-iterator that iterates the integer keys in the table at the given index. Inside the loop block,
-    // each element will on the top of the stack, ie access it using stack index -1.
-    //
-    // if requiredType is specified, iteration is halted once any value that
-    // isn't of type requiredType is encountered. Eg for:
-    // for i in L.ipairs(-1, requiredType: .number) { ... } { print(i, L.tonumber(-1)!) }
-    // when the table at the top of the stack was { 11, 22, "whoops", 44 }
-    // would result in:
-    // --> 1 11
-    // --> 2 22
+    /// Return a for-iterator that iterates the array part of a table.
+    ///
+    /// Inside the for loop, each element will on the top of the stack and
+    /// can be accessed using stack index -1.
+    ///
+    ///     // Assuming { 11, 22, 33 } is on the top of the stack
+    ///     for i in L.ipairs(-1) {
+    ///         print("Index \(i) is \(L.toint(-1)!)")
+    ///     }
+    ///     // Prints:
+    ///     // Index 1 is 11
+    ///     // Index 2 is 22
+    ///     // Index 3 is 33
+    ///
+    /// If `requiredType` is specified, iteration is halted once any value that
+    /// isn't of type `requiredType` is encountered. Eg for:
+    ///
+    ///     for i in L.ipairs(-1, requiredType: .number) {
+    ///         print(i, L.tonumber(-1)!)
+    ///     }
+    ///
+    /// when the table at the top of the stack was `{ 11, 22, "whoops", 44 }`
+    /// the iteration would stop after `22`.
+    ///
+    /// - Parameter index:Stack index of the table to iterate.
+    /// - Parameter requiredType: An optional type which the table members must
+    ///   be in order for the iteration to proceed.
+    /// - Precondition: `requiredType` must not be `.nilType`
+    /// - Precondition: `index` must refer to a table value.
     func ipairs(_ index: CInt, requiredType: LuaType? = nil) -> some Sequence {
         return IPairsIterator(self, index, requiredType)
     }
@@ -582,17 +642,23 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         }
     }
 
-    // Returns a for iterator that iterates all keys in the table, in an unspecified order. Assuming value on top of
-    // stack is a table { a = 1, b = 2, c = 3 } then the following code...
-    //
-    // for (k, v) in L.pairs(-1) {
-    //     print(L.tostring(k, encoding: .utf8)!, L.toint(v)!)
-    // }
-    //
-    // ...might output the following:
-    // --> b 2
-    // --> c 3
-    // --> a 1
+    /// Return a for-iterator that iterates all the members of a table.
+    ///
+    /// The values in the table are iterated in an unspecified order. Each time
+    /// through the for loop, the iterator returns the indexes of the key and
+    /// value which are pushed onto the stack. The stack is reset each time
+    /// through the loop, and on exit.
+    ///
+    ///     // Assuming top of stack is a table { a = 1, b = 2, c = 3 }
+    ///     for (k, v) in L.pairs(-1) {
+    ///         print(L.tostring(k, encoding: .utf8)!, L.toint(v)!)
+    ///     }
+    ///     // ...might output the following:
+    ///     // b 2
+    ///     // c 3
+    ///     // a 1
+    ///
+    /// - Precondition: `index` must refer to a table value.
     func pairs(_ index: CInt) -> PairsIterator {
         return PairsIterator(self, index)
     }
@@ -653,6 +719,19 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         pop()
     }
 
+    /// Make a protected call to a Lua function.
+    ///
+    /// The function and any arguments must already be pushed to the stack,
+    /// and are popped from the stack by this call. Unless the function errors,
+    /// `nret` result values are then pushed to the stack.
+    ///
+    /// - Parameter nargs: The number of arguments to pass to the function.
+    /// - Parameter nret: The number of expected results. Can be `LUA_MULTRET`
+    ///   to keep all returned values.
+    /// - Parameter traceback: If true, any errors thrown will include a
+    ///   full stack trace.
+    /// - throws: `LuaCallError` if a Lua error is raised during the execution
+    ///   of the function.
     func pcall(nargs: CInt, nret: CInt, traceback: Bool = true) throws {
         let index: CInt
         if traceback {
