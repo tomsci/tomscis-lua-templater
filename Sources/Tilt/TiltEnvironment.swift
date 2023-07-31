@@ -36,7 +36,12 @@ public class TiltEnvironment {
         L.push(contents)
         try L.pcall(nargs: 2, nret: 3)
         let result = L.tostring(1)!
-        let includes = L.tostringarray(2)!
+        var includes: [String] = []
+        for (k, _) in L.pairs(2) {
+            if let include = L.tostring(k) {
+                includes.append(include)
+            }
+        }
         let warnings = L.tostringarray(3)!
         return ParseResult(text: result, includes: includes, warnings: warnings)
     }
