@@ -40,7 +40,7 @@ An error will be returned if a code block fails to parse for any reason other th
 
 These are written as `{{ someLuaExpressionOrValue }}` (whitespace optional) and expand to the result of evaluating any variable or Lua statement valid in the current context. They are equivalent to a code block like `{% write(someLuaExpressionOrValue) %}`. Expression blocks can span multiple lines, although generally a code block might be a better choice at that point.
 
-An error will be returned if the expression evaluates to `nil` (because that is how [`write(nil)`](#writeval) behaves).
+The same rules apply for what is acceptable for `someLuaExpressionOrValue` as for [`write(val)`](#writeval) (ie it will error if the value is `nil`, etc).
 
 ## Comment blocks
 
@@ -130,6 +130,10 @@ A sandboxed subset of the [standard Lua functions](https://www.lua.org/manual/5.
 * `type`
 * `utf8`
 
+### `dump(val)`
+
+Returns a string representation of `val` which can be of any type, expanding data structures as much as possible.
+
 ### `eval(text)`
 
 Add `text` immediately after the current code block, at which point it will be evaluated and any special blocks will be expanded. Because the evaluation is delayed until the current code block is exited, it's a good idea to not put anything else in a code block which contains an `eval()`.
@@ -172,7 +176,7 @@ Example:
 
 ### `write(val)`
 
-This is the most fundamental primitive which converts `val` to a string (if necessary, using [`tostring`](https://www.lua.org/manual/5.4/manual.html#pdf-tostring)) and writes it to the output. An error is raised if `val` evaluates to `nil`.
+This is the most fundamental primitive which converts `val` to a string (if necessary, using [`tostring`](https://www.lua.org/manual/5.4/manual.html#pdf-tostring)) and writes it to the output. An error is raised if `val` evaluates to `nil`, or to a `table` or `userdata` without an explicit `__tostring` metamethod.
 
 Example:
 
