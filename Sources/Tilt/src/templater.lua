@@ -1,22 +1,4 @@
 
-example2 = [[
-<ul>
-{% for a in ipairs(bar.cheese()) do writef("<li>%s</li>\n", a) end %}
-</ul>
-]]
-
-bar = {
-    cheese = function() return { 1, 2, 3, 4 } end
-}
-
-example3 = [[
-{% for _, post in ipairs(site.allposts) do %}
-    {% for _, paragraph in ipairs(post) do %}
-        <li> {{paragraph}} </li>
-    {% end %}
-{% end %}
-]]
-
 example4 = [[
 {%
 for post in site.posts() do
@@ -58,7 +40,6 @@ function countNewlines(text)
     end
     return result
 end
-
 
 if readFile == nil then
     function readFile(path)
@@ -148,6 +129,7 @@ function makeSandbox()
 end
 
 function setContext(newContext)
+    -- print("setContext", dump(newContext))
     _context = newContext
 end
 
@@ -217,7 +199,9 @@ function parse(filename, text)
         filename = newPath
         lineNumber = newLine
     end
-
+    env.whereami = function()
+        writef("%s:%d", filename, lineNumber)
+    end
     env.eval = function(newText)
         text = text:sub(1, pos - 1)..newText..text:sub(pos)
     end

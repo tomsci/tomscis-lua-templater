@@ -2,9 +2,14 @@
 
 require("templater")
 
+local readFileData = {}
+function readFile(name)
+    return assert(readFileData[name])
+end
+
 local function assertEquals(a, b)
     if a ~= b then
-        error(string.format("%s not equal to %s", a, b))
+        error(string.format("%s not equal to %s", dump(a, "quoted_long"), dump(b, "quoted_long")))
     end
 end
 
@@ -112,6 +117,56 @@ function test_line_numbers()
     assertParseError(template, "test_line_numbers:12: Unterminated {#")
 end
 
+function test_simple_include()
+    readFileData = {
+        blah = [[
+First line of blah
+{% whereami() %}.
+]]
+    }
+
+    local template = [[
+line
+{% include "blah" %}
+3. {% whereami() %}.
+]]
+    local expected = [[
+line
+First line of blah
+blah:2.
+3. test_simple_include:3.
+]]
+    assertEquals(parse(template), expected)
+end
+
+function test_partial_include()
+    -- An include inside a partial code block
+    readFileData = {
+        blah = [[
+First line of blah
+{% whereami() %}.
+]]
+    }
+
+    local template = [[
+{% function foo() %}
+    Start of foo
+    {% include "blah" %}
+    More foo
+{% end %}
+6. {% whereami() %}.
+7. {% foo() %}
+]]
+    local expected = [[
+6. test_partial_include:6.
+7.     Start of foo
+    First line of blah
+blah:2.
+    More foo
+]]
+    assertEquals(parse(template), expected)
+end
+
 function main()
     for _, name in ipairs(tests) do
         io.stdout:write(string.format("Running %s\n", name))
@@ -120,3 +175,11 @@ function main()
     end
 end
 main()
+
+--     site = {
+--         allposts = {
+--             { "1Para1", "1Para2", "1Para3" },
+--             { "2Para1", "2Para2", "2Para3" },
+--             { "3Para1", "3Para2", "3Para3" },
+--         },
+--     }
