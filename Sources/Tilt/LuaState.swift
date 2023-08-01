@@ -593,6 +593,13 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             push(pushable)
         case let str as String: // HACK for _NSCFString not being Pushable??
             push(str, encoding: .utf8)
+        case let num as NSNumber: // Ditto for _NSCFNumber
+            if let int = num as? Int {
+                push(int)
+            } else {
+                // Conversion to Double cannot fail
+                push(num as! Double)
+            }
         case let array as Array<Any>:
             lua_createtable(self, CInt(array.count), 0)
             for (i, val) in array.enumerated() {
