@@ -113,6 +113,7 @@ function makeSandbox()
             xpcall = xpcall,
 
             -- Our helpers
+            dump = function(...) return _G.dump(...) end,
             json = json,
 
             -- Test
@@ -139,14 +140,14 @@ function parseFile(filename)
 end
 
 function parse(filename, text)
-    local inprogress = nil
-    local pos = 1
-    local lineNumber = 1 -- refers to start of inprogress, if set
-    local result = { n = 0 }
-    local includes = {}
-    local warnings = {}
-
     local env = makeSandbox()
+    local result = { n = 0 }
+    local ctx = {
+        includes = {},
+        warnings = {},
+        result = result,
+        env = env,
+    }
 
     local function parseError(fmt, ...)
         local msg
@@ -155,8 +156,9 @@ function parse(filename, text)
         else
             msg = string.format(fmt, ...)
         end
-        error(string.format("%s:%d: %s", filename, lineNumber, msg), 0)
+        error(string.format("%s:%d: %s", ctx.fileName, ctx.lineNumber, msg), 0)
     end
+    ctx.parseError = parseError
 
     local function parseAssert(cond, fmt, ...)
         if cond then
@@ -165,6 +167,7 @@ function parse(filename, text)
             parseError(fmt, ...)
         end
     end
+    ctx.parseAssert = parseAssert
 
     local function checkedToString(val)
         local t = type(val)
@@ -177,83 +180,88 @@ function parse(filename, text)
         return tostring(val)
     end
 
-    local write = function(text)
+    env.write = function(text)
         parseAssert(text ~= nil, "Cannot write() a nil value")
         result.n = result.n + 1
         result[result.n] = checkedToString(text)
     end
-    local writef = function(...)
-        write(string.format(...))
+
+    env.writef = function(...)
+        env.write(string.format(...))
     end
-    env.write = write
-    env.writef = writef
-    local warning = function(format, ...)
+
+    env.warning = function(format, ...)
         local line = debug.getinfo(2, "l").currentline
-        local str = string.format("%s:%d: "..format, filename, line, ...)
-        table.insert(warnings, str)
+        local str = string.format("%s:%d: "..format, env.fileName, line, ...)
+        table.insert(ctx.warnings, str)
         io.stderr:write(str.."\n")
     end
-    env.warning = warning
-    env.file = function(newPath, newLine)
-        dbg("FILE: %s:%d\n", newPath, newLine)
-        filename = newPath
-        lineNumber = newLine
-    end
+
     env.whereami = function()
-        writef("%s:%d", filename, lineNumber)
+        env.writef("%s:%d", ctx.fileName, ctx.lineNumber)
     end
-    env.eval = function(newText)
-        text = text:sub(1, pos - 1)..newText..text:sub(pos)
+
+    env.video = function(path)
+        env.warning("video API is not implemented yet")
+        env.writef("TODO: video(%q)", path)
+    end
+
+    env.eval = function(text, pathHint)
+        doParse(pathHint or "<eval>", text, ctx)
     end
 
     env.include = function(path)
         local newText = parseAssert(readFile(path), "Failed to open file %s", path)
-        local origFileDirective = string.format('{%% file(%q, %d) %%}', filename, lineNumber)
-        local newFileDirective = string.format('{%% file(%q, 1) %%}', path)
-        env.eval(newFileDirective..newText..origFileDirective)
-        includes[path] = true
+        ctx.includes[path] = true
+        env.eval(newText, path)
     end
 
-    env.video = function(path)
-        warning("video API is not implemented yet")
-        writef("TODO: video(%q)", path)
-    end
+    doParse(filename, text, ctx)
 
-    -- Does not use or modify pos. Updates lineNumber on exit.
+    return table.concat(ctx.result), ctx.includes, ctx.warnings
+end
+
+function doParse(filename, text, ctx)
+    local inprogress = nil
+    local pos = 1
+    local prevFile = ctx.fileName
+    local prevLine = ctx.lineNumber
+    ctx.fileName = filename
+    ctx.lineNumber = 1 -- refers to start of inprogress, if set
+    local env = ctx.env -- convenience
+
+    -- Does not use or modify pos. Updates env.lineNumber on exit.
     local function textBlock(txt)
-        -- dbg("[TEXT:%d]%s[/TEXT]\n", lineNumber, txt)
+        -- dbg("[TEXT:%d]%s[/TEXT]\n", env.lineNumber, txt)
         if inprogress then
             inprogress = string.format("%s write(%q) ", inprogress, txt)
             -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
         else
-            write(txt)
-            lineNumber = lineNumber + countNewlines(txt)
+            env.write(txt)
+            ctx.lineNumber = ctx.lineNumber + countNewlines(txt)
         end
     end
 
-    -- Note, pos must be updated before calls to codeBlock because this fn can
-    -- modify text (thanks to the include API). Updates lineNumber.
+    -- Does not use or modify pos. Updates env.lineNumber on exit.
     local function codeBlock(code)
-        -- dbg("[CODE:%d]%s[/CODE]\n", lineNumber, code)
+        -- dbg("[CODE:%d]%s[/CODE]\n", ctx.lineNumber, code)
         local toEval = inprogress and inprogress..code or code
-        local evalName = string.format("=%s", filename)
+        local evalName = string.format("=%s", ctx.fileName)
         -- Make line numbers in Lua errors correct by injecting newlines into the load data
-        local fn, err = load(string.rep("\n", lineNumber - 1)..toEval, evalName, "t", env)
+        local fn, err = load(string.rep("\n", ctx.lineNumber - 1)..toEval, evalName, "t", env)
         if fn == nil then
             if err:match("<eof>$") then
                 inprogress = toEval
                 -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
             else
-                parseError(err)
+                ctx.parseError(err)
             end
         else
             inprogress = nil
-            local prevLineNumber = lineNumber
+            local prevLineNumber = ctx.lineNumber
             fn()
-            -- This check is in case a file() directive has overridden the line number.
-            if lineNumber == prevLineNumber then
-                lineNumber = lineNumber + countNewlines(toEval)
-            end
+            assert(ctx.lineNumber == prevLineNumber) -- juuuust in case
+            ctx.lineNumber = ctx.lineNumber + countNewlines(toEval)
         end
     end
 
@@ -268,7 +276,7 @@ function parse(filename, text)
                 pos = exprPos
                 return true
             end
-            local endPos = assert(text:find("}}", exprPos + 2, true), "Unterminated {{")
+            local endPos = ctx.parseAssert(text:find("}}", exprPos + 2, true), "Unterminated {{")
             codeBlock(string.format(" write(%s) ", text:sub(exprPos + 2, endPos - 1)))
             pos = endPos + 2
             return true
@@ -281,8 +289,8 @@ function parse(filename, text)
                 pos = commentPos
                 return true
             end
-            local endPos = parseAssert(text:find("#}", pos, true), "Unterminated {#")
-            lineNumber = lineNumber + countNewlines(text:sub(pos, endPos - 1))
+            local endPos = ctx.parseAssert(text:find("#}", pos, true), "Unterminated {#")
+            ctx.lineNumber = ctx.lineNumber + countNewlines(text:sub(pos, endPos - 1))
             pos = endPos + 2
             return true
         end
@@ -295,14 +303,14 @@ function parse(filename, text)
                 return true
             end
             pos = codePos + 2
-            local endPos = parseAssert(text:find("%}", pos, true), "Unterminated {%")
+            local endPos = ctx.parseAssert(text:find("%}", pos, true), "Unterminated {%")
             local code = text:sub(pos, endPos - 1)
             pos = endPos + 2
             codeBlock(code)
             if text:sub(pos, pos) == "\n" then
                 -- Skip first newline after a code block
                 pos = pos + 1
-                lineNumber = lineNumber + 1
+                ctx.lineNumber = ctx.lineNumber + 1
             end
             return true
         end
@@ -321,12 +329,8 @@ function parse(filename, text)
     while nextBlock() do 
         -- Just keep looping
     end
-    return table.concat(result), includes, warnings
-end
 
--- parse(example2)
--- parse(example3)
--- parse(example4)
--- print(json({a = "hel\\lo"}))
--- parse("example5", example5)
--- parse(example6)
+    -- Restore these to their previous values on exit
+    ctx.fileName = prevFile
+    ctx.lineNumber = prevLine
+end

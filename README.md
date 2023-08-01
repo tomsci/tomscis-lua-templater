@@ -134,17 +134,24 @@ A sandboxed subset of the [standard Lua functions](https://www.lua.org/manual/5.
 
 Returns a string representation of `val` which can be of any type, expanding data structures as much as possible.
 
-### `eval(text)`
+### `eval(text, [pathHint])`
 
-Add `text` immediately after the current code block, at which point it will be evaluated and any special blocks will be expanded. Because the evaluation is delayed until the current code block is exited, it's a good idea to not put anything else in a code block which contains an `eval()`.
+Evaluates `text` and expands any special blocks. Does not return anything, the results of the evaluation (if any) are output directly.
+
+Optionally, a `pathHint` may be supplied. This is used in error messages.
 
 Example:
 
-`{% eval(foo.bar()) %}`
+```
+{% var = "me!" %}
+{% eval("Hello from {{ var }}") %}
+
+--> Hello from me!
+```
 
 ### `include(path)`
 
-Includes another template file into this template immediately after the current code block, with the same semantics and caveats as for [`eval(text)`](#evaltext).
+Includes another template file into this template, as if the contents of the file at `path` were passed to `eval()`.
 
 Example:
 

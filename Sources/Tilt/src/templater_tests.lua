@@ -167,6 +167,30 @@ blah:2.
     assertEquals(parse(template), expected)
 end
 
+function test_eval()
+    local template = [=[
+Hello {% eval("world") %}.
+Hello {% eval([[
+world
+{% whereami() %]].."}") %}
+]=]
+    local expected = [[
+Hello world.
+Hello world
+<eval>:2]]
+    assertEquals(parse(template), expected)
+end
+
+function test_dump()
+    local template = "{{ dump({11,22}) }}"
+    local expected = [[
+{
+  11,
+  22,
+}]]
+    assertEquals(parse(template), expected)
+end
+
 function main()
     for _, name in ipairs(tests) do
         io.stdout:write(string.format("Running %s\n", name))
