@@ -143,6 +143,35 @@ public extension String {
     }
 }
 
+fileprivate func moduleSearcher(_ L: LuaState!) -> CInt {
+    let pathRoot = L.tostring(lua_upvalueindex(1), encoding: .utf8)!
+    let displayPrefix = L.tostring(lua_upvalueindex(2), encoding: .utf8)!
+    guard let module = L.tostring(1, encoding: .utf8) else {
+        L.pushnil()
+        return 1
+    }
+
+    let parts = module.split(separator: ".", omittingEmptySubsequences: false)
+    let relPath = parts.joined(separator: "/") + ".lua"
+    let path = pathRoot + "/" + relPath
+
+    if let data = FileManager.default.contents(atPath: path) {
+        var err: CInt = 0
+        data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) -> Void in
+            let chars = ptr.bindMemory(to: CChar.self)
+            err = luaL_loadbufferx(L, chars.baseAddress, chars.count, "@" + displayPrefix + relPath, "t")
+        }
+        if err == 0 {
+            return 1
+        } else {
+            return lua_error(L) // errors with the string error pushed by luaL_loadbufferx
+        }
+    } else {
+        L.push("\n\tno resource '\(module)'")
+        return 1
+    }
+}
+
 fileprivate func gcUserdata(_ L: LuaState!) -> CInt {
     let rawptr = lua_touserdata(L, 1)!
     let anyPtr = rawptr.bindMemory(to: Any.self, capacity: 1)
@@ -289,6 +318,36 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         if libraries.contains(.debug) {
             requiref(name: "debug", function: luaopen_debug)
         }
+    }
+
+    /// Configure the directory to look in when loading modules with `require`.
+    ///
+    /// This replaces the default system search paths, and also disables native
+    /// module loading.
+    ///
+    /// For example `require "foo"` will look for `<path>/foo.lua`, and
+    /// `require "foo.bar"` will look for `<path>/foo/bar.lua`.
+    ///
+    /// - Parameter path: The root directory containing .lua files
+    /// - Parameter displayPrefix: Optional string to prefix onto paths shown in
+    ///   for example error messages.
+    /// - Precondition: The `package` standard library must have been opened.
+    func setRequireRoot(_ path: String, displayPrefix: String = "") {
+        let L = self
+        // Now configure the require path
+        guard getglobal("package") == .table else {
+            fatalError("Cannot use setRequireRoot if package library not opened!")
+        }
+        lua_getfield(L, -1, "searchers")
+        L.push(path, encoding: .utf8)
+        L.push(displayPrefix, encoding: .utf8)
+        lua_pushcclosure(L, moduleSearcher, 2) // pops path.path
+        lua_rawseti(L, -2, 2) // 2nd searcher is the .lua lookup one
+        pushnil()
+        lua_rawseti(L, -2, 3) // And prevent 3 from being used
+        pushnil()
+        lua_rawseti(L, -2, 4) // Ditto 4
+        pop(2) // searchers, package
     }
 
     enum WhatGarbage: CInt {

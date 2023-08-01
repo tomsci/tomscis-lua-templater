@@ -10,17 +10,12 @@ import TiltC
 
 public class TiltEnvironment {
     public let L: LuaState
-    let srcPath = Bundle.module.url(forResource: "src", withExtension: nil)!
 
     public init() {
         L = LuaState(libraries: .all, encoding: .stringEncoding(.utf8))
-        let packagePath = srcPath.path + "/?.lua"
-        L.getglobal("package")
-        L.setfield("path", packagePath)
-        L.pop()
+        L.setRequireRoot(Bundle.module.url(forResource: "src", withExtension: nil)!.path, displayPrefix: "Tilt/")
         L.getglobal("require")
-        L.push("templater")
-        lua_call(L, 1, 0)
+        try! L.pcall(arguments: "templater")
     }
 
     public struct ParseResult {
