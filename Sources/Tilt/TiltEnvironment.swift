@@ -29,7 +29,8 @@ public class TiltEnvironment {
         L.getglobal("parse")
         L.push(filename)
         L.push(contents)
-        try L.pcall(nargs: 2, nret: 3)
+        // parse() does its own xpcall around doParse() so don't add another traceback on here.
+        try L.pcall(nargs: 2, nret: 3, traceback: false)
         let result = L.tostring(1)!
         var includes: [String] = []
         for (k, _) in L.pairs(2) {

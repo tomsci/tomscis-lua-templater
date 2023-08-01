@@ -17,6 +17,17 @@ function countNewlines(text)
     return result
 end
 
+function getLine(text, num)
+    local i = 0
+    for line in text:gmatch("(.-)\n") do
+        i = i + 1
+        if i == num then
+            return line
+        end
+    end
+    return nil
+end
+
 if readFile == nil then
     function readFile(path)
         local f<close>, err = io.open(path, "r")
@@ -37,6 +48,28 @@ function dump(...)
     require("init_dump")
     -- That will overwrite this impl
     return dump(...)
+end
+
+function assertf(cond, fmt, ...)
+    if not cond then
+        error(string.format(fmt, ...), 2)
+    end
+    return cond
+end
+
+function errorf(fmt, ...)
+    error(string.format(fmt, ...), 2)
+end
+
+function checkedToString(val)
+    local t = type(val)
+    if t == "userdata" or t == "table" then
+        -- It's an error if it doesn't have a metatable with a __tostring
+        if getmetatable(val).__tostring == nil then
+            errorf("Cannot stringify a raw table or userdata %s", dump(val))
+        end
+    end
+    return tostring(val)
 end
 
 json = setmetatable({
@@ -125,6 +158,9 @@ function parse(filename, text)
         env = env,
     }
 
+    -- Note, parseError/parseAssert are only for errors in parsing blocks, and
+    -- should not be used by any of the APIs in env (ie things called from
+    -- code blocks).
     local function parseError(fmt, ...)
         local msg
         if select("#", ...) == 0 then
@@ -145,19 +181,8 @@ function parse(filename, text)
     end
     ctx.parseAssert = parseAssert
 
-    local function checkedToString(val)
-        local t = type(val)
-        if t == "userdata" or t == "table" then
-            -- It's an error if it doesn't have a metatable with a __tostring
-            if getmetatable(val).__tostring == nil then
-                parseError("Cannot stringify a raw table or userdata %s", dump(val))
-            end
-        end
-        return tostring(val)
-    end
-
     env.write = function(text)
-        parseAssert(text ~= nil, "Cannot write() a nil value")
+        assert(text ~= nil, "Cannot write() a nil value")
         result.n = result.n + 1
         result[result.n] = checkedToString(text)
     end
@@ -168,7 +193,7 @@ function parse(filename, text)
 
     env.warning = function(format, ...)
         local line = debug.getinfo(2, "l").currentline
-        local str = string.format("%s:%d: "..format, env.fileName, line, ...)
+        local str = string.format("%s:%d: "..format, ctx.fileName, line, ...)
         table.insert(ctx.warnings, str)
         io.stderr:write(str.."\n")
     end
@@ -187,12 +212,38 @@ function parse(filename, text)
     end
 
     env.include = function(path)
-        local newText = parseAssert(readFile(path), "Failed to open file %s", path)
+        local newText = assertf(readFile(path), "Failed to open file %s", path)
         ctx.includes[path] = true
         env.eval(newText, path)
     end
 
-    doParse(filename, text, ctx)
+    local errorHandler = function(err)
+        -- Walk the stack to find a source matching @ctx.filename, and get the line number from there
+        local errLine
+        local expectedSource = "@"..ctx.fileName
+        local pos = 2
+        while true do
+            local info = debug.getinfo(pos, "lS")
+            if not info then
+                break
+            elseif info.source == expectedSource then
+                errLine = info.currentline
+                break
+            end
+            pos = pos + 1
+        end
+
+        if errLine then
+            local msg = string.format("%s\n>>> %s:%d: %s", err, ctx.fileName, errLine, getLine(ctx.text, errLine))
+            return debug.traceback(msg, 2)
+        else
+            return debug.traceback(err, 2)
+        end
+    end
+    local ok, err = xpcall(doParse, errorHandler, filename, text, ctx)
+    if not ok then
+        error(err, 0)
+    end
 
     return table.concat(ctx.result), ctx.includes, ctx.warnings
 end
@@ -200,10 +251,10 @@ end
 function doParse(filename, text, ctx)
     local inprogress = nil
     local pos = 1
-    local prevFile = ctx.fileName
-    local prevLine = ctx.lineNumber
+    local prevFile, prevLine, prevText = ctx.fileName, ctx.lineNumber, ctx.text
     ctx.fileName = filename
     ctx.lineNumber = 1 -- refers to start of inprogress, if set
+    ctx.text = text
     local env = ctx.env -- convenience
 
     -- Does not use or modify pos. Updates ctx.lineNumber on exit.
@@ -222,7 +273,7 @@ function doParse(filename, text, ctx)
     local function codeBlock(code)
         -- dbg("[CODE:%d]%s[/CODE]\n", ctx.lineNumber, code)
         local toEval = inprogress and inprogress..code or code
-        local evalName = string.format("=%s", ctx.fileName)
+        local evalName = string.format("@%s", ctx.fileName)
         -- Make line numbers in Lua errors correct by injecting newlines into the load data
         local fn, err = load(string.rep("\n", ctx.lineNumber - 1)..toEval, evalName, "t", env)
         if fn == nil then
@@ -236,7 +287,7 @@ function doParse(filename, text, ctx)
             inprogress = nil
             local prevLineNumber = ctx.lineNumber
             fn()
-            assert(ctx.lineNumber == prevLineNumber) -- juuuust in case
+            assert(ctx.lineNumber == prevLineNumber, "Context line number changed by code block!") -- juuuust in case
             ctx.lineNumber = ctx.lineNumber + countNewlines(toEval)
         end
     end
@@ -309,4 +360,5 @@ function doParse(filename, text, ctx)
     -- Restore these to their previous values on exit
     ctx.fileName = prevFile
     ctx.lineNumber = prevLine
+    ctx.text = prevText
 end
