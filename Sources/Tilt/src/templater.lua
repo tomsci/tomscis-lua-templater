@@ -1,28 +1,4 @@
 
-example4 = [[
-{%
-for post in site.posts() do
-    for _, paragraph in ipairs(post) do %}
-        <li> {{paragraph}} </li>
-    {% end %}
-{% end %}
-]]
-
-example5 = [[
-1. Some text.
-2.
-3.
-4.
-5.{% include "header.txt" %}
-6. Some more text. {%warning("Should be line 6")%}
-]]
-
-example6 = [[
-
-{% for post in site.posts() do %}
-Unterminated code block...
-]]
-
 function makeArrayIterator(array)
     local function iterator(state)
         state.index = state.index + 1
@@ -230,9 +206,9 @@ function doParse(filename, text, ctx)
     ctx.lineNumber = 1 -- refers to start of inprogress, if set
     local env = ctx.env -- convenience
 
-    -- Does not use or modify pos. Updates env.lineNumber on exit.
+    -- Does not use or modify pos. Updates ctx.lineNumber on exit.
     local function textBlock(txt)
-        -- dbg("[TEXT:%d]%s[/TEXT]\n", env.lineNumber, txt)
+        -- dbg("[TEXT:%d]%s[/TEXT]\n", ctx.lineNumber, txt)
         if inprogress then
             inprogress = string.format("%s write(%q) ", inprogress, txt)
             -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
@@ -242,7 +218,7 @@ function doParse(filename, text, ctx)
         end
     end
 
-    -- Does not use or modify pos. Updates env.lineNumber on exit.
+    -- Does not use or modify pos. Updates ctx.lineNumber on exit.
     local function codeBlock(code)
         -- dbg("[CODE:%d]%s[/CODE]\n", ctx.lineNumber, code)
         local toEval = inprogress and inprogress..code or code
@@ -316,7 +292,7 @@ function doParse(filename, text, ctx)
         end
 
         -- Reaching here, there's nothing but possibly text to the end of the doc
-        assert(not inprogress, "Unterminated code block")
+        ctx.parseAssert(not inprogress, "Incomplete partial code block")
         if pos <= #text then
             textBlock(text:sub(pos))
             pos = #text + 1

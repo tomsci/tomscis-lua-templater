@@ -54,6 +54,14 @@ function test_unterminated_codeblock()
     assertParseError(template, "test_unterminated_codeblock:2: Unterminated {%")
 end
 
+function test_incomplete_partial_codeblock()
+    local template = [[
+1.
+2. {% function foo() %}
+]]
+    assertParseError(template, "test_incomplete_partial_codeblock:3: Incomplete partial code block")
+end
+
 function test_code_err()
     local template = [[
 1.
