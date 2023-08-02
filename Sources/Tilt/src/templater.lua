@@ -304,15 +304,16 @@ function doParse(filename, text, ctx, locals)
         inprogress = nil,
         text = text,
     }
+    local parentEnv = ctx.frame.env
     if locals then
         frame.env = setmetatable(locals, {
-            __index = ctx.frame.env,
+            __index = parentEnv,
             __newindex = function(_, name, val)
-                ctx.frame.env[name] = val
+                parentEnv[name] = val
             end
         })
     else
-        frame.env = ctx.frame.env
+        frame.env = parentEnv
     end
     table.insert(ctx.frames, frame)
     ctx.frame = frame
