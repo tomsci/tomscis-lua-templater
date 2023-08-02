@@ -259,7 +259,7 @@ function parse(filename, text)
     env.include = function(path)
         local newText = assertf(readFile(path), 2, "Failed to open file %s", path)
         ctx.includes[path] = newText
-        env.eval(newText, path)
+        doParse(path, newText, ctx, getLocals())
     end
 
     local errorHandler = function(err)
