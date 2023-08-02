@@ -21,7 +21,6 @@ public class TiltEnvironment {
     public struct ParseResult {
         public let text: String
         public let includes: [String]
-        public let warnings: [String]
     }
 
     public func parse(filename: String, contents: String) throws -> ParseResult {
@@ -30,7 +29,7 @@ public class TiltEnvironment {
         L.push(filename)
         L.push(contents)
         // parse() does its own xpcall around doParse() so don't add another traceback on here.
-        try L.pcall(nargs: 2, nret: 3, traceback: false)
+        try L.pcall(nargs: 2, nret: 2, traceback: false)
         let result = L.tostring(1)!
         var includes: [String] = []
         for (k, _) in L.pairs(2) {
@@ -38,7 +37,7 @@ public class TiltEnvironment {
                 includes.append(include)
             }
         }
-        let warnings = L.tostringarray(3)!
-        return ParseResult(text: result, includes: includes, warnings: warnings)
+        L.settop(0)
+        return ParseResult(text: result, includes: includes)
     }
 }

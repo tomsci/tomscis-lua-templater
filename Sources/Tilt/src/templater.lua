@@ -158,7 +158,6 @@ function parse(filename, text)
     local result = { n = 0 }
     local ctx = {
         includes = { [filename] = text},
-        warnings = {},
         result = result,
         frames = {},
         topenv = env,
@@ -207,9 +206,12 @@ function parse(filename, text)
     env.warning = function(format, ...)
         local info = debug.getinfo(2, "lS")
         local line = info.currentline
-        local str = string.format("%s:%d: "..format, info.short_src, info.currentline, ...)
-        table.insert(ctx.warnings, str)
-        io.stderr:write(str.."\n")
+        local str = string.format("%s:%d: Warning: "..format, info.short_src, info.currentline, ...)
+        if printWarning then
+            printWarning(str)
+        else
+            io.stderr:write(str.."\n")
+        end
     end
 
     env.whereami = function()
@@ -262,7 +264,7 @@ function parse(filename, text)
         error(err, 0)
     end
 
-    return table.concat(ctx.result), ctx.includes, ctx.warnings
+    return table.concat(ctx.result), ctx.includes
 end
 
 function doParse(filename, text, ctx)
@@ -300,7 +302,7 @@ function doParse(filename, text, ctx)
         if fn == nil then
             if err:match("<eof>$") then
                 frame.inprogress = toEval
-                -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", frame.inprogress)
+                -- dbg("[INPROGRESS:%d]%s[/INPROGRESS]\n", ctx.getLineNumber(), frame.inprogress)
             else
                 ctx.parseError(err)
             end
@@ -338,7 +340,12 @@ function doParse(filename, text, ctx)
                 return true
             end
             local endPos = ctx.parseAssert(text:find("#}", pos, true), "Unterminated {#")
-            frame.lineNumber = frame.lineNumber + countNewlines(text:sub(pos, endPos - 1))
+            local numLines = countNewlines(text:sub(pos, endPos - 1))
+            if frame.inprogress then
+                frame.inprogress = frame.inprogress .. string.rep("\n", numLines - 1)
+            else
+                frame.lineNumber = frame.lineNumber + numLines
+            end
             pos = endPos + 2
             return true
         end
@@ -357,8 +364,12 @@ function doParse(filename, text, ctx)
             codeBlock(code)
             if text:sub(pos, pos) == "\n" then
                 -- Skip first newline after a code block
+                if frame.inprogress then
+                    frame.inprogress = frame.inprogress .. "\n"
+                else
+                    frame.lineNumber = frame.lineNumber + 1
+                end
                 pos = pos + 1
-                frame.lineNumber = frame.lineNumber + 1
             end
             return true
         end
