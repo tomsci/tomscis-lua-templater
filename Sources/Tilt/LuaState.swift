@@ -933,9 +933,39 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         lua_setfield(self, -2, "__gc")
     }
 
+    private static let DefaultMetatableName = "SwiftType_Any"
+
+    /// Register a metatable for values of type `T` when they are pushed using
+    /// `pushuserdata()` or `pushany()`. Note, attempting to register a
+    /// metatable for types that are bridged to Lua types (such as `Integer,`
+    /// or `String`), will not work with values pushed with `pushany()` - if
+    /// you really need to do that, they must always be pushed with
+    /// `pushuserdata()` (at which point they cannot be used as normal Lua
+    /// numbers/strings/etc).
+    ///
+    /// For example, to make a type `Foo` callable:
+    ///
+    ///     L.registerMetatable(for: Foo.self, functions: [
+    ///         "__call": : { L in
+    ///            print("TODO call support")
+    ///            return 0
+    ///        }
+    ///     ])
+    ///
+    /// - Parameter for: Type to register.
+    /// - Parameter functions: Map of functions.
     func registerMetatable<T>(for type: T.Type, functions: [String: lua_CFunction]) {
         doRegisterMetatable(typeName: getMetatableName(for: type), functions: functions)
         pop() // metatable
+    }
+
+    /// Register a metatable to be used for all values which have not had an
+    /// explicit call to `registerMetatable`.
+    ///
+    /// - Parameter functions: map of functions
+    func registerDefaultMetatable(functions: [String: lua_CFunction]) {
+        doRegisterMetatable(typeName: Self.DefaultMetatableName, functions: functions)
+        pop()
     }
 
     /// Push any value representable using `Any` onto the stack as a `userdata`.
@@ -951,15 +981,19 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     ///   types to their Lua native representation where possible.
     func pushuserdata(_ val: Any) {
         let tname = getMetatableName(for: Swift.type(of: val))
-        let anyVal: Any = val
         let udata = lua_newuserdatauv(self, MemoryLayout<Any>.size, 0)!
         let udataPtr = udata.bindMemory(to: Any.self, capacity: 1)
-        udataPtr.initialize(to: anyVal)
+        udataPtr.initialize(to: val)
 
-        if luaL_getmetatable(self, tname) == LuaType.nilType.rawValue {
-            print("Implicitly registering empty metatable for type \(tname)")
+        if luaL_getmetatable(self, tname) == LUA_TNIL {
             pop()
-            doRegisterMetatable(typeName: tname, functions: [:])
+            if luaL_getmetatable(self, Self.DefaultMetatableName) == LUA_TTABLE {
+                // The stack is now right for the lua_setmetatable call below
+            } else {
+                pop()
+                print("Implicitly registering empty metatable for type \(tname)")
+                doRegisterMetatable(typeName: tname, functions: [:])
+            }
         }
         lua_setmetatable(self, -2) // pops metatable
     }
