@@ -160,7 +160,7 @@ function parse(filename, text)
         includes = { [filename] = text},
         result = result,
         frames = {},
-        topenv = env,
+        frame = { env = env },
     }
     ctx.getLineNumber = function()
         local n = ctx.frame.lineNumber
@@ -223,8 +223,37 @@ function parse(filename, text)
         env.writef("TODO: video(%q)", path)
     end
 
+    -- Should only be called by include() and eval() (or things similarly one level away from user code)
+    local function getLocals()
+        local results = {}
+        local i = 2 -- Upvalue 1 will always be _ENV, so skip that
+        local f = debug.getinfo(3, "f").func
+        while true do
+            local name, val = debug.getupvalue(f, i)
+            if name then
+                -- dbg("upvalue %s %s\n", name, val)
+                result[name] = val
+                i = i + 1
+            else
+                break
+            end
+        end
+        local i = 1
+        while true do
+            local name, val = debug.getlocal(3, i)
+            if name then
+                -- dbg("local %s %s\n", name, val)
+                results[name] = val
+                i = i + 1
+            else
+                break
+            end
+        end
+        return results
+    end
+
     env.eval = function(text, pathHint)
-        doParse(pathHint or "<eval>", text, ctx)
+        doParse(pathHint or "<eval>", text, ctx, getLocals())
     end
 
     env.include = function(path)
@@ -267,15 +296,24 @@ function parse(filename, text)
     return table.concat(ctx.result), ctx.includes
 end
 
-function doParse(filename, text, ctx)
+function doParse(filename, text, ctx, locals)
     local pos = 1
     local frame = {
         fileName = filename,
         lineNumber = 1, -- refers to start of inprogress, if set
         inprogress = nil,
         text = text,
-        env = ctx.topenv, -- for now
     }
+    if locals then
+        frame.env = setmetatable(locals, {
+            __index = ctx.frame.env,
+            __newindex = function(_, name, val)
+                ctx.frame.env[name] = val
+            end
+        })
+    else
+        frame.env = ctx.frame.env
+    end
     table.insert(ctx.frames, frame)
     ctx.frame = frame
     local env = frame.env -- convenience
