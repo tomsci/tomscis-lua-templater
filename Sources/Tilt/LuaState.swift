@@ -247,6 +247,9 @@ public struct LuaTableRef {
 }
 
 public struct LuaCallError: Error, Equatable, CustomStringConvertible, LocalizedError {
+    public init(_ error: String) {
+        self.error = error
+    }
     public let error: String
     public var description: String { error }
     public var errorDescription: String? { error }
@@ -827,7 +830,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             let errStr = tostring(-1, convert: true)!
             pop()
             // print(errStr)
-            throw LuaCallError(error: errStr)
+            throw LuaCallError(errStr)
         }
     }
 
@@ -1019,9 +1022,12 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         var errored = false
         do {
             nret = try block()
+        } catch let error as LuaCallError {
+            errored = true
+            push(error.error)
         } catch {
             errored = true
-            self.push("Swift error: \(String(describing: error))")
+            push("Swift error: \(String(describing: error))")
         }
         if errored {
             // Be careful not to leave a String (or anything else) in the stack frame here, because it won't get cleaned up,
