@@ -18,12 +18,17 @@ function countNewlines(text)
 end
 
 function getLine(text, num)
-    local i = 0
-    for line in text:gmatch("(.-)\n") do
-        i = i + 1
+    local i = 1
+    local nextLinePos = 1
+    for line, pos in text:gmatch("(.-)\n()") do
         if i == num then
             return line
         end
+        i = i + 1
+        nextLinePos = pos
+    end
+    if i == num and nextLinePos <= #text then
+        return text:sub(nextLinePos)
     end
     return nil
 end
@@ -50,15 +55,15 @@ function dump(...)
     return dump(...)
 end
 
-function assertf(cond, fmt, ...)
+function assertf(cond, lvl, fmt, ...)
     if not cond then
-        error(string.format(fmt, ...), 2)
+        error(string.format(fmt, ...), lvl == 0 and 0 or lvl + 1)
     end
     return cond
 end
 
-function errorf(fmt, ...)
-    error(string.format(fmt, ...), 2)
+function errorf(lvl, fmt, ...)
+    error(string.format(fmt, ...), lvl == 0 and 0 or lvl + 1)
 end
 
 function checkedToString(val)
@@ -66,7 +71,7 @@ function checkedToString(val)
     if t == "userdata" or t == "table" then
         -- It's an error if it doesn't have a metatable with a __tostring
         if getmetatable(val).__tostring == nil then
-            errorf("Cannot stringify a raw table or userdata %s", dump(val))
+            errorf(3, "Cannot stringify a raw table or userdata %s", dump(val))
         end
     end
     return tostring(val)
@@ -152,11 +157,19 @@ function parse(filename, text)
     local env = makeSandbox()
     local result = { n = 0 }
     local ctx = {
-        includes = {},
+        includes = { [filename] = text},
         warnings = {},
         result = result,
-        env = env,
+        frames = {},
+        topenv = env,
     }
+    ctx.getLineNumber = function()
+        local n = ctx.frame.lineNumber
+        if ctx.frame.inprogress then
+            n = n + countNewlines(ctx.frame.inprogress)
+        end
+        return n
+    end
 
     -- Note, parseError/parseAssert are only for errors in parsing blocks, and
     -- should not be used by any of the APIs in env (ie things called from
@@ -168,7 +181,7 @@ function parse(filename, text)
         else
             msg = string.format(fmt, ...)
         end
-        error(string.format("%s:%d: %s", ctx.fileName, ctx.lineNumber, msg), 0)
+        error(string.format("%s:%d: %s", ctx.frame.fileName, ctx.getLineNumber(), msg), 0)
     end
     ctx.parseError = parseError
 
@@ -182,7 +195,7 @@ function parse(filename, text)
     ctx.parseAssert = parseAssert
 
     env.write = function(text)
-        assert(text ~= nil, "Cannot write() a nil value")
+        assertf(text ~= nil, 2, "Cannot write() a nil value")
         result.n = result.n + 1
         result[result.n] = checkedToString(text)
     end
@@ -192,14 +205,15 @@ function parse(filename, text)
     end
 
     env.warning = function(format, ...)
-        local line = debug.getinfo(2, "l").currentline
-        local str = string.format("%s:%d: "..format, ctx.fileName, line, ...)
+        local info = debug.getinfo(2, "lS")
+        local line = info.currentline
+        local str = string.format("%s:%d: "..format, info.short_src, info.currentline, ...)
         table.insert(ctx.warnings, str)
         io.stderr:write(str.."\n")
     end
 
     env.whereami = function()
-        env.writef("%s:%d", ctx.fileName, ctx.lineNumber)
+        env.writef("%s:%d", ctx.frame.fileName, ctx.frame.lineNumber)
     end
 
     env.video = function(path)
@@ -212,29 +226,32 @@ function parse(filename, text)
     end
 
     env.include = function(path)
-        local newText = assertf(readFile(path), "Failed to open file %s", path)
-        ctx.includes[path] = true
+        local newText = assertf(readFile(path), 2, "Failed to open file %s", path)
+        ctx.includes[path] = newText
         env.eval(newText, path)
     end
 
     local errorHandler = function(err)
-        -- Walk the stack to find a source matching @ctx.filename, and get the line number from there
-        local errLine
-        local expectedSource = "@"..ctx.fileName
+        -- Walk the stack to find the first source matching anything in includes, and get the line number from there
+        local errLine, errFile, errText
         local pos = 2
         while true do
             local info = debug.getinfo(pos, "lS")
             if not info then
                 break
-            elseif info.source == expectedSource then
+            end
+            local sourceFile = info.source:match("^@(.*)")
+            if sourceFile and ctx.includes[sourceFile] then
                 errLine = info.currentline
+                errFile = sourceFile
+                errText = ctx.includes[sourceFile]
                 break
             end
             pos = pos + 1
         end
 
         if errLine then
-            local msg = string.format("%s\n>>> %s:%d: %s", err, ctx.fileName, errLine, getLine(ctx.text, errLine))
+            local msg = string.format("%s\n>>> %s:%d: %s", err, errFile, errLine, getLine(errText, errLine))
             return debug.traceback(msg, 2)
         else
             return debug.traceback(err, 2)
@@ -249,46 +266,50 @@ function parse(filename, text)
 end
 
 function doParse(filename, text, ctx)
-    local inprogress = nil
     local pos = 1
-    local prevFile, prevLine, prevText = ctx.fileName, ctx.lineNumber, ctx.text
-    ctx.fileName = filename
-    ctx.lineNumber = 1 -- refers to start of inprogress, if set
-    ctx.text = text
-    local env = ctx.env -- convenience
+    local frame = {
+        fileName = filename,
+        lineNumber = 1, -- refers to start of inprogress, if set
+        inprogress = nil,
+        text = text,
+        env = ctx.topenv, -- for now
+    }
+    table.insert(ctx.frames, frame)
+    ctx.frame = frame
+    local env = frame.env -- convenience
 
     -- Does not use or modify pos. Updates ctx.lineNumber on exit.
     local function textBlock(txt)
-        -- dbg("[TEXT:%d]%s[/TEXT]\n", ctx.lineNumber, txt)
-        if inprogress then
-            inprogress = string.format("%s write(%q) ", inprogress, txt)
-            -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
+        -- dbg("[TEXT:%d]%s[/TEXT]\n", ctx.getLineNumber(), txt)
+        if frame.inprogress then
+            frame.inprogress = string.format("%s write(%q) ", frame.inprogress, txt)
+            -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", frame.inprogress)
         else
             env.write(txt)
-            ctx.lineNumber = ctx.lineNumber + countNewlines(txt)
+            frame.lineNumber = frame.lineNumber + countNewlines(txt)
         end
     end
 
-    -- Does not use or modify pos. Updates ctx.lineNumber on exit.
+    -- Does not use or modify pos. Updates frame.lineNumber on exit.
     local function codeBlock(code)
-        -- dbg("[CODE:%d]%s[/CODE]\n", ctx.lineNumber, code)
-        local toEval = inprogress and inprogress..code or code
-        local evalName = string.format("@%s", ctx.fileName)
+        -- dbg("[CODE:%d]%s[/CODE]\n", ctx.getLineNumber(), code)
+        local toEval = frame.inprogress and frame.inprogress..code or code
+        local evalName = string.format("@%s", frame.fileName)
         -- Make line numbers in Lua errors correct by injecting newlines into the load data
-        local fn, err = load(string.rep("\n", ctx.lineNumber - 1)..toEval, evalName, "t", env)
+        local fn, err = load(string.rep("\n", frame.lineNumber - 1)..toEval, evalName, "t", env)
         if fn == nil then
             if err:match("<eof>$") then
-                inprogress = toEval
-                -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", inprogress)
+                frame.inprogress = toEval
+                -- dbg("[INPROGRESS]%s[/INPROGRESS]\n", frame.inprogress)
             else
                 ctx.parseError(err)
             end
         else
-            inprogress = nil
-            local prevLineNumber = ctx.lineNumber
+            frame.inprogress = nil
+            local prevLineNumber = frame.lineNumber
             fn()
-            assert(ctx.lineNumber == prevLineNumber, "Context line number changed by code block!") -- juuuust in case
-            ctx.lineNumber = ctx.lineNumber + countNewlines(toEval)
+            assert(frame.lineNumber == prevLineNumber, "Context line number changed by code block!") -- juuuust in case
+            frame.lineNumber = frame.lineNumber + countNewlines(toEval)
         end
     end
 
@@ -317,7 +338,7 @@ function doParse(filename, text, ctx)
                 return true
             end
             local endPos = ctx.parseAssert(text:find("#}", pos, true), "Unterminated {#")
-            ctx.lineNumber = ctx.lineNumber + countNewlines(text:sub(pos, endPos - 1))
+            frame.lineNumber = frame.lineNumber + countNewlines(text:sub(pos, endPos - 1))
             pos = endPos + 2
             return true
         end
@@ -337,18 +358,18 @@ function doParse(filename, text, ctx)
             if text:sub(pos, pos) == "\n" then
                 -- Skip first newline after a code block
                 pos = pos + 1
-                ctx.lineNumber = ctx.lineNumber + 1
+                frame.lineNumber = frame.lineNumber + 1
             end
             return true
         end
 
         -- Reaching here, there's nothing but possibly text to the end of the doc
-        ctx.parseAssert(not inprogress, "Incomplete partial code block")
         if pos <= #text then
             textBlock(text:sub(pos))
             pos = #text + 1
             return true
         else
+            ctx.parseAssert(not frame.inprogress, "Incomplete partial code block")
             return false
         end
     end
@@ -357,8 +378,8 @@ function doParse(filename, text, ctx)
         -- Just keep looping
     end
 
-    -- Restore these to their previous values on exit
-    ctx.fileName = prevFile
-    ctx.lineNumber = prevLine
-    ctx.text = prevText
+    -- Pop our frame from the stack
+    local lastFrame = #ctx.frames
+    table.remove(ctx.frames, lastFrame)
+    ctx.frame = ctx.frames[lastFrame - 1]
 end

@@ -29,7 +29,9 @@ end
 local function assertParseError(text, expected)
     local ok, err = pcall(parse, text)
     assert(not ok)
-    assertEquals(err, expected)
+    if err:sub(1, #expected + 1) ~= expected.."\n" then
+        error(string.format("%s does not start with %s", dump(err, "quoted_long"), dump(expected, "quoted_long")))
+    end
 end
 
 function test_simple()
@@ -72,7 +74,8 @@ function test_code_err()
 end
 
 function test_nil_value()
-    assertParseError("{{somethingThatsNil}}", "test_nil_value:1: Cannot write() a nil value")
+    assertParseError("{{somethingThatsNil}}", "test_nil_value:1: Cannot write() a nil value\
+>>> test_nil_value:1: {{somethingThatsNil}}")
 end
 
 function test_example_1()
@@ -199,14 +202,19 @@ function test_dump()
     assertEquals(parse(template), expected)
 end
 
+function runTest(name)
+    io.stdout:write(string.format("Running %s\n", name))
+    currentTestName = name
+    _ENV[name]()
+end
+
 function main()
     for _, name in ipairs(tests) do
-        io.stdout:write(string.format("Running %s\n", name))
-        currentTestName = name
-        _ENV[name]()
+        runTest(name)
     end
 end
 main()
+-- runTest"test_incomplete_partial_codeblock"
 
 --     site = {
 --         allposts = {
