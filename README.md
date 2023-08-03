@@ -113,26 +113,26 @@ There is no "special" syntax other than the block types described above. Everyth
 
 A sandboxed subset of the [standard Lua functions](https://www.lua.org/manual/5.4/contents.html#index) are available:
 
-* `assert`
-* `debug.traceback`
-* `error`
-* `ipairs`
-* `math`
-* `next`
-* `os.date`, `os.time`
-* `pairs`
-* `pcall`
-* `rawequal`
-* `rawget`
-* `rawlen`
-* `rawset`
-* `select`
-* `string`
-* `table`
-* `tonumber`
-* `tostring`
-* `type`
-* `utf8`
+* [`assert`](https://www.lua.org/manual/5.4/manual.html#pdf-assert)
+* [`debug.traceback`](https://www.lua.org/manual/5.4/manual.html#pdf-debug.traceback)
+* [`error`](https://www.lua.org/manual/5.4/manual.html#pdf-error)
+* [`ipairs`](https://www.lua.org/manual/5.4/manual.html#pdf-ipairs)
+* [`math`](https://www.lua.org/manual/5.4/manual.html#6.7)
+* [`next`](https://www.lua.org/manual/5.4/manual.html#pdf-next)
+* [`os.date`](https://www.lua.org/manual/5.4/manual.html#pdf-os.date), [`os.time`](https://www.lua.org/manual/5.4/manual.html#pdf-os.time)
+* [`pairs`](https://www.lua.org/manual/5.4/manual.html#pdf-pairs)
+* [`pcall`](https://www.lua.org/manual/5.4/manual.html#pdf-pcall)
+* [`rawequal`](https://www.lua.org/manual/5.4/manual.html#pdf-rawequal)
+* [`rawget`](https://www.lua.org/manual/5.4/manual.html#pdf-rawget)
+* [`rawlen`](https://www.lua.org/manual/5.4/manual.html#pdf-rawlen)
+* [`rawset`](https://www.lua.org/manual/5.4/manual.html#pdf-rawset)
+* [`select`](https://www.lua.org/manual/5.4/manual.html#pdf-select)
+* [`string`](https://www.lua.org/manual/5.4/manual.html#6.4)
+* [`table`](https://www.lua.org/manual/5.4/manual.html#6.6)
+* [`tonumber`](https://www.lua.org/manual/5.4/manual.html#pdf-tonumber)
+* [`tostring`](https://www.lua.org/manual/5.4/manual.html#pdf-tostring)
+* [`type`](https://www.lua.org/manual/5.4/manual.html#pdf-type)
+* [`utf8`](https://www.lua.org/manual/5.4/manual.html#6.5)
 
 ### `dump(val)`
 
@@ -155,7 +155,7 @@ Example:
 
 ### `include(path)`
 
-Includes another template file into this template, as if the contents of the file at `path` were passed to `eval()`.
+Includes another template file into this template, as if the contents of the file at `path` were passed to [`eval()`](#evaltext-pathhint).
 
 Example:
 
@@ -179,7 +179,7 @@ Note the above example uses the "syntactic sugar" convenience form for a [Lua fu
 
 ### `render([path], [text])`
 
-Like [`include(path)`](#includepath) or [`eval(text)`](#evaltextpathhint) but the resulting data is returned as a result rather than being written to the output. If only `path` is specified, the text to render is read from `path`. If `text` is specified, behaves like [`eval()`](#evaltextpathhint) and `path` is considered a hint solely for error messages. At least one of `path` or `text` must be specified.
+Like [`include(path)`](#includepath) or [`eval(text)`](#evaltext-pathhint) but the resulting data is returned as a result rather than being written to the output. If only `path` is specified, the text to render is read from `path`. If `text` is specified, behaves like [`eval()`](#evaltext-pathhint) and `path` is considered a hint solely for error messages. At least one of `path` or `text` must be specified.
 
 ### `warning(format, ...)`
 
