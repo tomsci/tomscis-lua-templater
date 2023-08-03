@@ -61,7 +61,7 @@ function test_incomplete_partial_codeblock()
 1.
 2. {% function foo() %}
 ]]
-    assertParseError(template, "test_incomplete_partial_codeblock:3: Incomplete partial code block")
+    assertParseError(template, "test_incomplete_partial_codeblock:3: 'end' expected (to close 'function' at line 2) near <eof>")
 end
 
 function test_code_err()
@@ -69,8 +69,7 @@ function test_code_err()
 1.
 2. {% woop woop %}
 ]]
-    -- Yes, code errors currently give you two locations
-    assertParseError(template, "test_code_err:2: test_code_err:2: syntax error near 'woop'")
+    assertParseError(template, "test_code_err:2: syntax error near 'woop'")
 end
 
 function test_nil_value()
