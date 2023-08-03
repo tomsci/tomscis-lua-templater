@@ -154,12 +154,7 @@ function setContext(newContext)
     _context = newContext
 end
 
-function parseFile(filename)
-    local text = readFile(filename)
-    return parse(filename, text)
-end
-
-function parse(filename, text)
+function render(filename, text)
     local env = makeSandbox()
     local result = { n = 0 }
     local ctx = {
@@ -169,13 +164,14 @@ function parse(filename, text)
         frame = { env = env },
     }
 
-    env.write = function(text)
+    local write = function(text)
         assertf(text ~= nil, 2, "Cannot write() a nil value")
         tappend(result, checkedToString(text))
     end
+    env.write = write
 
     env.writef = function(...)
-        env.write(string.format(...))
+        write(string.format(...))
     end
 
     env.warning = function(format, ...)
@@ -229,16 +225,34 @@ function parse(filename, text)
     end
 
     env.eval = function(text, pathHint)
-        doParse(pathHint or "<eval>", text, ctx, getLocals())
+        doRender(pathHint or "<eval>", text, ctx, getLocals())
     end
 
     env.include = function(path)
         local newText = assertf(readFile(path), 2, "Failed to open file %s", path)
         ctx.includes[path] = newText
-        doParse(path, newText, ctx, getLocals())
+        doRender(path, newText, ctx, getLocals())
     end
 
-    local errorHandler = function(err)
+    env.render = function(path, text)
+        local result = { n = 0 }
+        local locals = getLocals()
+        local origWrite = write
+        local customWriteFn = function(text)
+            tappend(result, text)
+        end
+        locals.write = customWriteFn
+        if text == nil then
+            text = assertf(readFile(path), 2, "Failed to open file %s", path)
+        end
+        ctx.includes[path] = text
+        write = customWriteFn
+        doRender(path or "<eval>", text, ctx, locals)
+        write = origWrite
+        return table.concat(result)
+    end
+
+    local function errorHandler(err)
         -- Walk the stack to find the first source matching anything in includes, and get the line number from there
         local errLine, errFile, errText
         local pos = 2
@@ -251,20 +265,21 @@ function parse(filename, text)
             if sourceFile and ctx.includes[sourceFile] then
                 errLine = info.currentline
                 errFile = sourceFile
-                errText = ctx.includes[sourceFile]
+                errText = getLine(ctx.includes[sourceFile], errLine)
                 break
             end
             pos = pos + 1
         end
 
         if errLine then
-            local msg = string.format("%s\n>>> %s:%d: %s", err, errFile, errLine, getLine(errText, errLine))
+            local msg = string.format("%s\n>>> %s:%d: %s", err, errFile, errLine, errText)
             return debug.traceback(msg, 2)
         else
             return debug.traceback(err, 2)
         end
     end
-    local ok, err = xpcall(doParse, errorHandler, filename, text, ctx)
+
+    local ok, err = xpcall(doRender, errorHandler, filename, text, ctx)
     if not ok then
         error(err, 0)
     end
@@ -272,7 +287,7 @@ function parse(filename, text)
     return table.concat(ctx.result), ctx.includes
 end
 
-function doParse(filename, text, ctx, locals)
+function doRender(filename, text, ctx, locals)
     local pos = 1
     local frame = {
         fileName = filename,

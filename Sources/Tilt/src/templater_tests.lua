@@ -22,12 +22,12 @@ setmetatable(_ENV, { __newindex = function(env, name, val)
     rawset(env, name, val)
 end})
 
-local function parse(template)
-    return _ENV.parse(currentTestName, template)
+local function render(template)
+    return _ENV.render(currentTestName, template)
 end
 
 local function assertParseError(text, expected)
-    local ok, err = pcall(parse, text)
+    local ok, err = pcall(render, text)
     assert(not ok)
     if err:sub(1, #expected + 1) ~= expected.."\n" then
         error(string.format("%s does not start with %s", dump(err, "quoted_long"), dump(expected, "quoted_long")))
@@ -45,7 +45,7 @@ Line 1
 This is line 2
 Line 3
 ]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
 end
 
 function test_unterminated_codeblock()
@@ -94,7 +94,7 @@ function test_example_1()
     <li>44</li>
 </ul>
 ]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
 end
 
 function test_comment()
@@ -106,7 +106,7 @@ Then {# a comment that's {% awkward {{nope}} #} & more text.
 Some text
 Then  & more text.
 ]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
 end
 
 function test_line_numbers()
@@ -146,7 +146,7 @@ First line of blah
 blah:2.
 3. test_simple_include:3.
 ]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
 end
 
 function test_partial_include()
@@ -174,7 +174,7 @@ First line of blah
 blah:2.
     More foo
 ]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
 end
 
 function test_eval()
@@ -188,7 +188,7 @@ world
 Hello world.
 Hello world
 <eval>:2]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
 end
 
 function test_dump()
@@ -198,7 +198,29 @@ function test_dump()
   11,
   22,
 }]]
-    assertEquals(parse(template), expected)
+    assertEquals(render(template), expected)
+end
+
+function test_render()
+    readFileData = {
+        blah = [[
+First line of blah
+{% whereami() %}.
+]]
+    }
+
+    local template = [[
+line
+{% local foo = render("blah") %}
+foo is {{ foo }}
+]]
+    local expected = [[
+line
+foo is First line of blah
+blah:2.
+
+]]
+    assertEquals(render(template), expected)
 end
 
 function runTest(name)

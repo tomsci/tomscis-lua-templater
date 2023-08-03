@@ -1,12 +1,16 @@
-# templater.lua syntax
+# Tomsci's InContext Lua Templater (or "Tilt" for short)
 
-Templates are a combination of text (which is copied verbatim to the output) and various types of special block which are evaluated.
+A lightweight templating engine designed to be embedded in a website builder such as InContext.
+
+Tilt templates are a combination of text (which is copied verbatim to the output) and various types of special block which are evaluated.
 
 ## Code blocks
 
-These are the core of the templater. Code blocks are written in [Lua 5.4](https://www.lua.org/manual/5.4/manual.html) and can make use of any of the APIs described below. Crucially, code blocks may be fragments of Lua that are not by themselves a complete Lua block, and these may be combined with text and other blocks to form a valid Lua block. Such blocks can include control structures (such as loops) which can make text blocks appear in the output multiple times.
+These are the core of the templater. Code blocks are written in [Lua 5.4](https://www.lua.org/manual/5.4/manual.html) and can make use of any of the APIs described below. Code blocks can be interleaved with text and other blocks. Code blocks can include control structures (such as loops) which can make text blocks appear in the output multiple times.
 
-Code blocks are written as `{% ... %}` and can span multiple lines. They do not expand to anything, unless they contain code which calls `write()`.  All code blocks in a given parse operation share an environment, meaning a block may refer to a variable constructed by an earlier code block. Variables are not shared between parse operations.
+Code blocks are written as `{% ... %}` and can span multiple lines. They do not expand to anything, unless they contain code which (directly or indirectly) calls [`write()`](#writeval).  All code blocks in a given template render share an environment, meaning a block may refer to a variable constructed by an earlier code block. Variables are not shared between renders.
+
+Code blocks do not need to form value Lua blocks - they can be snippets of code providing that they evaluate to a valid Lua block when combined with the subsequent code blocks. Such snippets are referred to as 'partial' code blocks.
 
 For example, a simple code block would be:
 
@@ -172,6 +176,10 @@ Note the above example uses the "syntactic sugar" convenience form for a [Lua fu
 `{% foo = {}; write(json(foo)) %}` results in `[]`
 
 `{% foo = json.dict {}; write(json(foo)) %}` results in `{}`
+
+### `render([path], [text])`
+
+Like [`include(path)`](#includepath) or [`eval(text)`](#evaltextpathhint) but the resulting data is returned as a result rather than being written to the output. If only `path` is specified, the text to render is read from `path`. If `text` is specified, behaves like [`eval()`](#evaltextpathhint) and `path` is considered a hint solely for error messages. At least one of `path` or `text` must be specified.
 
 ### `warning(format, ...)`
 

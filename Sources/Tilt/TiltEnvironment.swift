@@ -18,17 +18,24 @@ public class TiltEnvironment {
         try! L.pcall(arguments: "templater")
     }
 
-    public struct ParseResult {
+    public struct RenderResult {
         public let text: String
         public let includes: [String]
     }
 
+    public typealias ParseResult = RenderResult
+
+    @available(*, deprecated, message: "`parse()` has been replaced by `render()`")
     public func parse(filename: String, contents: String) throws -> ParseResult {
+        return try render(filename: filename, contents: contents)
+    }
+
+    public func render(filename: String, contents: String) throws -> RenderResult {
         L.settop(0)
-        L.getglobal("parse")
+        L.getglobal("render")
         L.push(filename)
         L.push(contents)
-        // parse() does its own xpcall around doParse() so don't add another traceback on here.
+        // render() does its own xpcall around doRender() so don't add another traceback on here.
         try L.pcall(nargs: 2, nret: 2, traceback: false)
         let result = L.tostring(1)!
         var includes: [String] = []
@@ -38,6 +45,6 @@ public class TiltEnvironment {
             }
         }
         L.settop(0)
-        return ParseResult(text: result, includes: includes)
+        return RenderResult(text: result, includes: includes)
     }
 }
