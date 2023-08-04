@@ -244,6 +244,11 @@ public struct LuaTableRef {
         }
         return result
     }
+}	
+
+public struct LuaClosureRef {
+    let L: LuaState!
+    let index: CInt
 }
 
 public struct LuaCallError: Error, Equatable, CustomStringConvertible, LocalizedError {
@@ -427,7 +432,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     /// - Returns: the value as a String, or `nil` if it could not be converted.
     func tostring(_ index: CInt, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
         if let data = todata(index) {
-           return String(data: data, encoding: encoding)
+            return String(data: data, encoding: encoding)
         } else if convert {
             var len: Int = 0
             let ptr = luaL_tolstring(self, index, &len)!
@@ -551,7 +556,8 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return tostringarray(index, key: key, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    func toany(_ index: CInt) -> Any? {
+    // we're not worrying about Array<Foo> technically being hashable if Foo is, this is for primitive hashables only
+    func toanyhashable(_ index: CInt, guessType: Bool = true) -> AnyHashable? {
         guard let t = type(index) else {
             return nil
         }
@@ -569,21 +575,111 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
                 return tonumber(index)
             }
         case .string:
+            if guessType {
+                return guessString(index: index)
+            } else {
+                return nil // Should LuaStringRef be Hashable?
+            }
+        default:
+            return nil
+        }
+    }
+
+    // Unless lua_isnoneornil(L, index), this will always return some(Any)
+    func toany(_ index: CInt, guessType: Bool = true) -> Any? {
+        if let hashable = toanyhashable(index, guessType: guessType) {
+            return hashable
+        }
+        guard let t = type(index) else {
+            return nil
+        }
+        switch (t) {
+        case .string:
+            assert(!guessType) // Otherwise toanyhashable would have done it
             return LuaStringRef(L: self, index: index)
         case .table:
-            return LuaTableRef(L: self, index: index)
+            if guessType {
+                return guessTable(index: index)
+            } else {
+                return LuaTableRef(L: self, index: index)
+            }
         case .function:
-            // Not going to attempt generic callables just yet...
             if let fn = lua_tocfunction(self, index) {
                 return fn
+            } else {
+                return LuaClosureRef(L: self, index: index)
             }
         case .userdata:
             return touserdata(index)
         case .thread:
             return lua_tothread(self, index)
+        default:
+            // Remaining types should have been handled by toanyhashable
+            fatalError("Should not hit default in toany switch!")
         }
-        print("Unhandled type in toany!")
-        return nil
+    }
+
+    private func guessString(index: CInt) -> AnyHashable {
+        if let str = tostring(index, convert: false) {
+            // This should fail if the string isn't valid in the default encoding?
+            return str
+        } else {
+            return todata(index)!
+        }
+    }
+
+    private func guessTable(index: CInt) -> Any {
+        var hasIntKeys = false
+        var hasStringKeys = false
+        var hasHashableKeys = false // that also aren't strings
+        var hasNonHashableKeys = false
+        for (k, v) in pairs(index) {
+            let t = type(k)
+            switch t {
+            case .number:
+                if toint(k) != nil {
+                    hasIntKeys = true
+                } else {
+                    hasHashableKeys = true
+                }
+            case .string:
+                if tostring(k) != nil {
+                    hasStringKeys = true
+                } else {
+                    hasHashableKeys = true
+                }
+            default:
+                if toanyhashable(index, guessType: true) != nil {
+                    hasHashableKeys = true
+                } else {
+                    hasNonHashableKeys = true
+                }
+            }
+        }
+        if hasNonHashableKeys {
+            fatalError("Cannot represent a table with nonhashable keys")
+        } else if hasHashableKeys || (hasStringKeys && hasIntKeys) {
+            var result: [AnyHashable: Any] = [:]
+            for (k, v) in pairs(index) {
+                result[toanyhashable(k, guessType: true)!] = toany(v, guessType: true)!
+            }
+            return result
+        } else if hasStringKeys {
+            var result: [String: Any] = [:]
+            for (k, v) in pairs(index) {
+                result[tostring(k)!] = toany(v, guessType: true)!
+            }
+            return result
+        } else if hasIntKeys {
+            var result: [Any] = []
+            for _ in ipairs(index) {
+                result.append(toany(-1)!)
+            }
+            return result
+        } else {
+            // Empty table, assume array
+            return Array<Any>()
+        }
     }
 
     func pushany(_ value: Any?) {
