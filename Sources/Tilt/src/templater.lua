@@ -190,11 +190,6 @@ function render(filename, text)
         env.writef("%s:%d", info.short_src, info.currentline)
     end
 
-    env.video = function(path)
-        env.warning("video API is not implemented yet")
-        env.writef("TODO: video(%q)", path)
-    end
-
     -- Should only be called by include() and eval() (or things similarly one level away from user code)
     local function getLocals()
         local results = {}
