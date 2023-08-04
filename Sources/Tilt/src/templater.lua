@@ -338,26 +338,26 @@ function doRender(filename, text, ctx, locals)
         local codePos = text:find("{%", pos, true)
         local exprPos = text:find("{{", pos, true)
         local commentPos = text:find("{#", pos, true)
-        if exprPos and exprPos < (codePos or math.maxinteger) and exprPos < (commentPos or math.maxinteger) then
+        local stringPos, stringEndPos, neqs = text:find("%[(=*)%[\n?", pos)
+        local max = math.maxinteger
+        local blockPos = math.min(codePos or max, exprPos or max, commentPos or max, stringPos or max)
+
+        if blockPos ~= max and blockPos > pos then
+            textBlock(text:sub(pos, blockPos - 1))
+            pos = blockPos
+            return true
+        end
+
+        if exprPos == blockPos then
             -- {{ expression }}
-            if exprPos > pos then
-                textBlock(text:sub(pos, exprPos - 1))
-                pos = exprPos
-                return true
-            end
             local endPos = parseAssert(text:find("}}", exprPos + 2, true), "Unterminated {{")
             codeBlock(string.format(" write(%s) ", text:sub(exprPos + 2, endPos - 1)))
             pos = endPos + 2
             return true
         end
 
-        if commentPos and commentPos < (codePos or math.maxinteger) then
+        if commentPos == blockPos then
             -- {# comment #}
-            if commentPos > pos then
-                textBlock(text:sub(pos, commentPos - 1))
-                pos = commentPos
-                return true
-            end
             local endPos = parseAssert(text:find("#}", pos, true), "Unterminated {#")
             local numLines = countNewlines(text:sub(pos, endPos - 1))
             addCode(string.rep("\n", numLines - 1))
@@ -365,13 +365,8 @@ function doRender(filename, text, ctx, locals)
             return true
         end
 
-        if codePos then
+        if codePos == blockPos then
             -- {% code %}
-            if codePos > pos then
-                textBlock(text:sub(pos, codePos - 1))
-                pos = codePos
-                return true
-            end
             pos = codePos + 2
             local endPos = parseAssert(text:find("%}", pos, true), "Unterminated {%")
             local code = text:sub(pos, endPos - 1)
@@ -384,6 +379,18 @@ function doRender(filename, text, ctx, locals)
             end
             return true
         end
+
+        if stringPos == blockPos then
+            -- [[ escaped text ]] or [=[ escaped text ]=] etc
+            local endSeq = string.format("]%s]", neqs)
+            local endPos = parseAssert(text:find(endSeq, stringEndPos + 1, true), "Unterminated "..endSeq)
+            textBlock(text:sub(stringEndPos + 1, endPos - 1))
+            pos = endPos + #endSeq
+            return true
+        end
+
+        -- Shouldn't ever happen
+        assertf(blockPos == max, 1, "Unhandled blockPos %d pos %d", blockPos, pos)
 
         -- Reaching here, there's nothing but possibly text to the end of the doc
         if pos <= #text then

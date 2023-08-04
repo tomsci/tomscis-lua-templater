@@ -223,6 +223,37 @@ blah:2.
     assertEquals(render(template), expected)
 end
 
+function test_escapes()
+    local template = '{{ "{%" }} something {{ "%}" }}'
+    local expected = '{% something %}'
+    assertEquals(render(template), expected)
+end
+
+function test_string_blocks()
+    local template = "This is [[{%escaped%}]]"
+    local expected = "This is {%escaped%}"
+    assertEquals(render(template), expected)
+
+    local template = "This is [=[{%escaped%}]=]."
+    local expected = "This is {%escaped%}."
+    assertEquals(render(template), expected)
+
+    local template = "This is [[{{}}]]."
+    local expected = "This is {{}}."
+    assertEquals(render(template), expected)
+
+    -- Check we skip leading newlines
+    local template = "This is [[\n{{}}]]."
+    local expected = "This is {{}}."
+    assertEquals(render(template), expected)
+
+    -- Literal [[]]
+    local template = "This is [=[[[]=][=[]]]=]"
+    local expected = "This is [[]]"
+    assertEquals(render(template), expected)
+end
+
+
 function runTest(name)
     io.stdout:write(string.format("Running %s\n", name))
     currentTestName = name

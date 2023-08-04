@@ -48,7 +48,7 @@ The same rules apply for what is acceptable for `someLuaExpressionOrValue` as fo
 
 ## Comment blocks
 
-These are written as `{# anything #}` and are ignored by the parser. Comment blocks can span multiple lines and can contain expression blocks and code blocks (which are ignored), but not other comment blocks.
+These are written as `{# anything #}` and are ignored by the parser. Comment blocks can span multiple lines and can contain expression, code and long-string blocks (which are ignored), but not other comment blocks.
 
 Within a code block, the normal Lua comment block syntax can also be used:
 
@@ -61,19 +61,42 @@ This is multiline Lua comment.
 %}
 ```
 
+## Long-string blocks
+
+To escape any number of other block declarations, you can wrap them in a long-string block, modeled after Lua's [long literal](https://www.lua.org/manual/5.4/manual.html#3.1) syntax, the contents of which are copied to the output with no further expansion. This is useful when including examples of Tilt template syntax in a template, for example.
+
+```
+This is normal text.
+
+[[
+This is a long-string block so this {% isn't code %}.
+]]
+```
+
+outputs:
+
+```
+This is normal text.
+
+This is a long-string block so this {% isn't code %}.
+
+```
+
+As with Lua's long literals, any number of `=` characters can be put between the square brackets, if you need to escape something which itself contains a closing long literal sequence such as `]]` (or `]=]`, etc):
+
+```
+[=[
+write([[Getting tricky now are we?]])
+]=]
+```
+
+In keeping with the Lua syntax, if the first character of a long-string block is a newline, it is skipped.
+
+To include a literal `[[` or `]]` sequence, use `[=[[[]=]`/`[=[]]]=]`, or an expression block with a string in, like `{{ "[[" }}`
+
 ## Text blocks
 
 Anything that isn't delimited by one of the above block sequences is considered a text block, including whitespace and newlines. Text blocks appearing between a partial code block and the code block which completes it are combined in-place within the code, at any other time text blocks are copied unchanged to the output.
-
-To escape a sequence that might otherwise be interpreted as a block delimiter, wrap in an expression block that evaluates a Lua string, for example:
-
-```
-{{"{%"}} Not actually a code block %}
-
-{{"{{"}} Not actually an expression block }}
-```
-
-Note it is easiest to escape just the starting block delimeter, as the ending delimiters do not need escaping in a text block.
 
 ## "Macro-style" code blocks
 
