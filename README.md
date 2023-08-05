@@ -36,9 +36,7 @@ This expands to:
     <li>4</li>
 ```
 
-The evaluation of partial code blocks is deferred until a code block that completes them is encountered, at which point the accumulated code and text is evaluated. An error will be raised if a file fails to complete any partial code blocks.
-
-An error will be returned if a code block fails to parse for any reason other than it being a partial block, or if there is any error raised when the block is executed.
+An error will be returned if the combined code, text etc blocks fail to parse, or if there is any error raised by any of the code blocks.
 
 ## Expression blocks
 
@@ -48,9 +46,9 @@ The same rules apply for what is acceptable for `someLuaExpressionOrValue` as fo
 
 ## Comment blocks
 
-These are written as `{# anything #}` and are ignored by the parser. Comment blocks can span multiple lines and can contain expression, code and long-string blocks (which are ignored), but not other comment blocks.
+These are written as `{# anything #}` and are ignored by the parser. Comment blocks can span multiple lines and can contain expression, code and long-string blocks (all of which are ignored), but not other comment blocks.
 
-Within a code block, the normal Lua comment block syntax can also be used:
+Additionally, within a code block the normal Lua comment block syntax can also be used:
 
 ```
 {% -- This is a Lua comment within a code block
@@ -63,7 +61,7 @@ This is multiline Lua comment.
 
 ## Long-string blocks
 
-To escape any number of other block declarations, you can wrap them in a long-string block, modeled after Lua's [long literal](https://www.lua.org/manual/5.4/manual.html#3.1) syntax, the contents of which are copied to the output with no further expansion. This is useful when including examples of Tilt template syntax in a template, for example.
+To escape any number of other block declarations, you can wrap them in a long-string block, modeled after Lua's [long literal](https://www.lua.org/manual/5.4/manual.html#3.1) string syntax, the contents of which are copied to the output with no further expansion. This is useful when including examples of Tilt template syntax in a template, for example.
 
 ```
 This is normal text.
@@ -92,7 +90,7 @@ write([[Getting tricky now are we?]])
 
 In keeping with the Lua syntax, if the first character of a long-string block is a newline, it is skipped.
 
-To include a literal `[[` or `]]` sequence, use `[=[[[]=]`/`[=[]]]=]`, or an expression block with a string in, like `{{ "[[" }}`
+To include a literal `[[` or `]]` sequence (or `[=[`, etc), use `[=[[[]=]`/`[=[]]]=]`, or an expression block with a string in, like `{{ "[[" }}`
 
 ## Text blocks
 
@@ -166,6 +164,8 @@ Returns a string representation of `val` which can be of any type, expanding dat
 Evaluates `text` and expands any special blocks. Does not return anything, the results of the evaluation (if any) are output directly.
 
 Optionally, a `pathHint` may be supplied. This is used in error messages.
+
+`text` shares the same environment (ie, variables) as the caller, with one additional nuance: `local` variables in scope at the call site are _also_ visible to `text`, however assigning to such a variable inside `text` will not alter what the original `local` variable is set to (whereas if the original was not `local`, it would).
 
 Example:
 
