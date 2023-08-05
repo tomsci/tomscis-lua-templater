@@ -23,20 +23,23 @@ public class TiltEnvironment {
         public let includes: [String]
     }
 
-    public typealias ParseResult = RenderResult
-
-    @available(*, deprecated, message: "`parse()` has been replaced by `render()`")
-    public func parse(filename: String, contents: String) throws -> ParseResult {
-        return try render(filename: filename, contents: contents)
-    }
-
-    public func render(filename: String, contents: String) throws -> RenderResult {
+    /// Render a template.
+    ///
+    /// - Parameter filename: The name to associate with the template. Used only for logging.
+    /// - Parameter contents: The text of the template to render.
+    /// - Parameter globalIncludes: Optionally, specify one or more files to include prior to rendering the template.
+    ///   These are treated as if `contents` started with `include "<path>"` for each path in `globalIncludes`.
+    /// - Throws: `LuaCallError` if a Lua error is raised during the render.
+    /// - Returns: A `Render` result containing the text result and all the templates used by the render (which will
+    ///   always include `filename` and anything in `globalIncludes`).
+    public func render(filename: String, contents: String, globalIncludes: [String] = []) throws -> RenderResult {
         L.settop(0)
         L.getglobal("render")
         L.push(filename)
         L.push(contents)
+        L.push(globalIncludes)
         // render() does its own xpcall around doRender() so don't add another traceback on here.
-        try L.pcall(nargs: 2, nret: 2, traceback: false)
+        try L.pcall(nargs: 3, nret: 2, traceback: false)
         let result = L.tostring(1)!
         var includes: [String] = []
         for (k, _) in L.pairs(2) {

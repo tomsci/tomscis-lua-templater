@@ -904,7 +904,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     ///   to keep all returned values.
     /// - Parameter traceback: If true, any errors thrown will include a
     ///   full stack trace.
-    /// - throws: `LuaCallError` if a Lua error is raised during the execution
+    /// - Throws: `LuaCallError` if a Lua error is raised during the execution
     ///   of the function.
     /// - Precondition: The top of the stack must contain a function and `nargs`
     ///   arguments.

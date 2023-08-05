@@ -77,7 +77,7 @@ function checkedToString(val)
     return tostring(val)
 end
 
-function tappend(tbl, val)
+local function tappend(tbl, val)
     local n = tbl.n + 1
     tbl.n = n
     tbl[n] = val
@@ -135,10 +135,6 @@ function makeSandbox()
             -- Our helpers
             dump = function(...) return _G.dump(...) end,
             json = json,
-
-            -- Test
-            -- bar = bar,
-            -- posts = posts,
         }
     })
     if _context then
@@ -154,15 +150,15 @@ function setContext(newContext)
     _context = newContext
 end
 
-function render(filename, text)
+function render(filename, text, globalIncludes)
     local env = makeSandbox()
     local result = { n = 0 }
     local ctx = {
         includes = { [filename] = text},
         result = result,
-        frames = {},
         frame = { env = env },
     }
+    ctx.frames = { ctx.frame }
 
     local write = function(text)
         assertf(text ~= nil, 2, "Cannot write() a nil value")
@@ -223,10 +219,14 @@ function render(filename, text)
         doRender(pathHint or "<eval>", text, ctx, getLocals())
     end
 
-    env.include = function(path)
+    local function doInclude(path, locals)
         local newText = assertf(readFile(path), 2, "Failed to open file %s", path)
         ctx.includes[path] = newText
-        doRender(path, newText, ctx, getLocals())
+        doRender(path, newText, ctx, locals)
+    end
+
+    env.include = function(path)
+        doInclude(path, getLocals())
     end
 
     env.render = function(path, text)
@@ -272,6 +272,15 @@ function render(filename, text)
         else
             return debug.traceback(err, 2)
         end
+    end
+
+    if globalIncludes then
+        local ok, err = xpcall(function()
+            for i, path in ipairs(globalIncludes) do
+                doInclude(path, nil)
+            end
+        end, errorHandler)
+        if not ok then error(err, 0) end
     end
 
     local ok, err = xpcall(doRender, errorHandler, filename, text, ctx)
