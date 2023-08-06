@@ -28,7 +28,7 @@ end
 
 local function assertParseError(text, expected)
     local ok, err = pcall(render, text)
-    assert(not ok)
+    assert(not ok, "Parse was expected to error but didn't!")
     if err:sub(1, #expected + 1) ~= expected.."\n" then
         error(string.format("%s does not start with %s", dump(err, "quoted_long"), dump(expected, "quoted_long")))
     end
@@ -98,10 +98,10 @@ function test_example_1()
 end
 
 function test_comment()
-    local template = [[
+    local template = [===[
 Some text
-Then {# a comment that's {% awkward {{nope}} #} & more text.
-]]
+Then --[=[ a comment that's ]] awkward {{nope}} ]=] & more text.
+]===]
     local expected = [[
 Some text
 Then  & more text.
@@ -122,9 +122,9 @@ function test_line_numbers()
 9 {% for i = 1, 1 do %}
 
 {% end %}
-{# 12
+{{ 12
 ]]
-    assertParseError(template, "test_line_numbers:12: Unterminated {#")
+    assertParseError(template, "test_line_numbers:12: Unterminated {{")
 end
 
 function test_simple_include()
@@ -250,6 +250,19 @@ function test_string_blocks()
     -- Literal [[]]
     local template = "This is [=[[[]=][=[]]]=]"
     local expected = "This is [[]]"
+    assertEquals(render(template), expected)
+
+    -- Check leading newline in long-string block doesn't mess up line numbers
+    local template = [=[
+long text [[
+{% error("not code") %}
+]]
+{% whereami() %}
+]=]
+    local expected = [[
+long text {% error("not code") %}
+
+test_string_blocks:4]]
     assertEquals(render(template), expected)
 end
 

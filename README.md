@@ -44,21 +44,6 @@ These are written as `{{ someLuaExpressionOrValue }}` (whitespace optional) and 
 
 The same rules apply for what is acceptable for `someLuaExpressionOrValue` as for [`write(val)`](#writeval) (ie it will error if the value is `nil`, etc).
 
-## Comment blocks
-
-These are written as `{# anything #}` and are ignored by the parser. Comment blocks can span multiple lines and can contain expression, code and long-string blocks (all of which are ignored), but not other comment blocks.
-
-Additionally, within a code block the normal Lua comment block syntax can also be used:
-
-```
-{% -- This is a Lua comment within a code block
-
---[[
-This is multiline Lua comment.
-]]
-%}
-```
-
 ## Long-string blocks
 
 To escape any number of other block declarations, you can wrap them in a long-string block, modeled after Lua's [long literal](https://www.lua.org/manual/5.4/manual.html#3.1) string syntax, the contents of which are copied to the output with no further expansion. This is useful when including examples of Tilt template syntax in a template, for example.
@@ -91,6 +76,35 @@ write([[Getting tricky now are we?]])
 In keeping with the Lua syntax, if the first character of a long-string block is a newline, it is skipped.
 
 To include a literal `[[` or `]]` sequence (or `[=[`, etc), use `[=[[[]=]`/`[=[]]]=]`, or an expression block with a string in, like `{{ "[[" }}`
+
+## Comment blocks
+
+These are written in the same was Lua long comments `--[[ anything ]]` and are ignored by the parser. Comment blocks can span multiple lines and can contain any type of block (all of which are ignored) which doesn't contain the comment end delimiter. The same long literal logic applies as with long-string blocks, so to comment out something which contains `[[` or `]]`, use a longer comment with more equals signslike `--[=[` and `]=]`.
+
+Additionally, within a code block the normal Lua comment block syntax can also be used.
+
+```
+
+--[[ This is a comment block ]]
+
+--[=[
+This is a multiline comment block which comments out a code block and a long-string block.
+
+{% This code block is ignored because it's in a comment block %}
+
+This string block is also ignored: [[ ]].
+
+End of multiline comment block: ]=]
+
+{% -- This is a single-line Lua comment within a code block
+
+--[[
+This is multiline long Lua comment within a code block.
+]]
+%}
+```
+
+Note that `--` on its own without a following `[`, does _not_ introduce a single-line comment. As such, `--` does not need escaping in text blocks unless it forms part of a comment block delimiter (in which case, enclose it in a long-string block with a different number of `=`).
 
 ## Text blocks
 

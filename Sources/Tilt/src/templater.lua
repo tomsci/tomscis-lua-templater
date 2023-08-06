@@ -341,10 +341,13 @@ function doRender(filename, text, ctx, locals)
     local function nextBlock()
         local codePos = text:find("{%", pos, true)
         local exprPos = text:find("{{", pos, true)
-        local commentPos = text:find("{#", pos, true)
-        local stringPos, stringEndPos, neqs = text:find("%[(=*)%[\n?", pos)
+        local stringPos, stringEndPos, neqs = text:find("%[(=*)%[", pos)
+        local commentPos = text:find("--", pos, true)
         local max = math.maxinteger
-        local blockPos = math.min(codePos or max, exprPos or max, commentPos or max, stringPos or max)
+        local blockPos = math.min(codePos or max, exprPos or max, stringPos or max)
+        if commentPos and stringPos and commentPos == stringPos - 2 and commentPos < blockPos then
+            blockPos = commentPos
+        end
 
         if blockPos ~= max and blockPos > pos then
             textBlock(text:sub(pos, blockPos - 1))
@@ -356,15 +359,6 @@ function doRender(filename, text, ctx, locals)
             -- {{ expression }}
             local endPos = parseAssert(text:find("}}", exprPos + 2, true), "Unterminated {{")
             codeBlock(string.format(" write(%s) ", text:sub(exprPos + 2, endPos - 1)))
-            pos = endPos + 2
-            return true
-        end
-
-        if commentPos == blockPos then
-            -- {# comment #}
-            local endPos = parseAssert(text:find("#}", pos, true), "Unterminated {#")
-            local numLines = countNewlines(text:sub(pos, endPos - 1))
-            addCode(string.rep("\n", numLines - 1))
             pos = endPos + 2
             return true
         end
@@ -384,11 +378,24 @@ function doRender(filename, text, ctx, locals)
             return true
         end
 
-        if stringPos == blockPos then
+        if stringPos == blockPos or commentPos == blockPos then
             -- [[ escaped text ]] or [=[ escaped text ]=] etc
             local endSeq = string.format("]%s]", neqs)
-            local endPos = parseAssert(text:find(endSeq, stringEndPos + 1, true), "Unterminated "..endSeq)
-            textBlock(text:sub(stringEndPos + 1, endPos - 1))
+            local endPos = parseAssert(text:find(endSeq, stringEndPos + 1, true), "Missing "..endSeq)
+            local blockContents = text:sub(stringEndPos + 1, endPos - 1)
+            if blockPos == commentPos then
+                -- Comment block, just have to balance line numbers
+                local numLines = countNewlines(blockContents)
+                addCode(string.rep("\n", numLines - 1))
+            else
+                if blockContents:sub(1, 1) == "\n" then
+                    -- Eat leading newline
+                    addCode("\n")
+                    textBlock(blockContents:sub(2))
+                else
+                    textBlock(blockContents)
+                end
+            end
             pos = endPos + #endSeq
             return true
         end
