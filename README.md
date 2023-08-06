@@ -79,9 +79,9 @@ To include a literal `[[` or `]]` sequence (or `[=[`, etc), use `[=[[[]=]`/`[=[]
 
 ## Comment blocks
 
-These are written in the same was Lua long comments `--[[ anything ]]` and are ignored by the parser. Comment blocks can span multiple lines and can contain any type of block (all of which are ignored) which doesn't contain the comment end delimiter. The same long literal logic applies as with long-string blocks, so to comment out something which contains `[[` or `]]`, use a longer comment with more equals signslike `--[=[` and `]=]`.
+These are written in the same way as Lua long comments `--[[ comment ]]` and are ignored by the parser. Comment blocks can span multiple lines and can contain any type of block (all of which are ignored) which doesn't contain the comment end delimiter. The same long literal logic applies as with long-string blocks, so to comment out something which contains `[[` or `]]`, use a delimiter with more equals signs such as `--[=[ comment with [[]] in! ]=]`.
 
-Additionally, within a code block the normal Lua comment block syntax can also be used.
+Within a code block, the normal Lua comment syntax can also be used.
 
 ```
 
@@ -104,7 +104,7 @@ This is multiline long Lua comment within a code block.
 %}
 ```
 
-Note that `--` on its own without a following `[`, does _not_ introduce a single-line comment. As such, `--` does not need escaping in text blocks unless it forms part of a comment block delimiter (in which case, enclose it in a long-string block with a different number of `=`).
+Note that `--` on its own in a text block without a following `[`, does _not_ introduce a single-line comment. As such, `--` does not need escaping in text blocks unless it forms part of a comment block delimiter (in which case, enclose it in a long-string block with a different number of `=`).
 
 ## Text blocks
 
