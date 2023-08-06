@@ -393,6 +393,10 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return LuaType(rawValue: t)
     }
 
+    func typename(_ index: CInt) -> String {
+        return String(cString: lua_typename(self, index))
+    }
+
     func isnone(_ index: CInt) -> Bool {
         return type(index) == nil
     }
@@ -449,14 +453,22 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return tostring(index, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    func toint(_ index: CInt) -> Int? {
+    func tointeger(_ index: CInt) -> lua_Integer? {
         let L = self
         var isnum: CInt = 0
         let ret = lua_tointegerx(L, index, &isnum)
         if isnum == 0 {
             return nil
         } else {
-            return Int(ret)
+            return ret
+        }
+    }
+
+    func toint(_ index: CInt) -> Int? {
+        if let int = tointeger(index) {
+            return Int(exactly: int)
+        } else {
+            return nil
         }
     }
 
@@ -699,6 +711,8 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
                 // Conversion to Double cannot fail
                 push(num as! Double)
             }
+        case let data as Data: // Presumably this is needed too for NSData...
+            push(data)
         case let array as Array<Any>:
             lua_createtable(self, CInt(array.count), 0)
             for (i, val) in array.enumerated() {
@@ -719,37 +733,47 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
     // iterators
 
-    private class IPairsIterator : Sequence, IteratorProtocol {
+    class IPairsIterator : Sequence, IteratorProtocol {
         let L: LuaState
         let index: CInt
-        let top: CInt
+        let top: CInt?
         let requiredType: LuaType?
         var i: lua_Integer
-        init(_ L: LuaState, _ index: CInt, _ requiredType: LuaType?) {
+        init(_ L: LuaState, _ index: CInt, requiredType: LuaType?, start: lua_Integer? = nil, resetTop: Bool = true) {
             precondition(requiredType != .nilType, "Cannot iterate with a required type of LUA_TNIL")
             precondition(L.type(index) == .table, "Cannot iterate something that isn't a table!")
             self.L = L
-            self.index = index
+            self.index = lua_absindex(L, index)
             self.requiredType = requiredType
-            top = lua_gettop(L)
-            i = 0
+            top = resetTop ? lua_gettop(L) : nil
+            if let start {
+                i = start - 1
+            } else {
+                i = 0
+            }
         }
-        func next() -> lua_Integer? {
-            L.settop(top)
+        public func next() -> lua_Integer? {
+            if let top {
+                L.settop(top)
+            }
             i = i + 1
             let t = lua_rawgeti(L, index, i)
             if let requiredType = self.requiredType {
                 if t != requiredType.rawValue {
+                    L.pop()
                     return nil
                 }
             } else if t == LUA_TNIL {
+                L.pop()
                 return nil
             }
 
             return i
         }
         deinit {
-            L.settop(top)
+            if let top {
+                L.settop(top)
+            }
         }
     }
 
@@ -780,10 +804,16 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     /// - Parameter index:Stack index of the table to iterate.
     /// - Parameter requiredType: An optional type which the table members must
     ///   be in order for the iteration to proceed.
+    /// - Parameter start: If set, start iteration at this index rather than the
+    ///   beginning of the array.
+    /// - Parameter resetTop: By default, the stack top is reset on exit and 
+    ///   each time through the iterator to what it was at the point of calling
+    ///   `ipairs`. Occasionally (such as when using `luaL_Buffer`) this is not
+    ///   desirable and can be disabled by setting `resetTop` to false.
     /// - Precondition: `requiredType` must not be `.nilType`
     /// - Precondition: `index` must refer to a table value.
-    func ipairs(_ index: CInt, requiredType: LuaType? = nil) -> some Sequence {
-        return IPairsIterator(self, index, requiredType)
+    func ipairs(_ index: CInt, requiredType: LuaType? = nil, start: lua_Integer? = nil, resetTop: Bool = true) -> IPairsIterator {
+        return IPairsIterator(self, index, requiredType: requiredType, start: start, resetTop: resetTop)
     }
 
     class PairsIterator : Sequence, IteratorProtocol {
