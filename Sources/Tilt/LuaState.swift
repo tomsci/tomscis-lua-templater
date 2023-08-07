@@ -262,7 +262,7 @@ public struct LuaCallError: Error, Equatable, CustomStringConvertible, Localized
 
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
-    public struct Libraries: OptionSet {
+    struct Libraries: OptionSet {
         public let rawValue: Int
 
         public init(rawValue: Int) {
@@ -633,7 +633,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         var hasStringKeys = false
         var hasHashableKeys = false // that also aren't strings
         var hasNonHashableKeys = false
-        for (k, v) in pairs(index) {
+        for (k, _) in pairs(index) {
             let t = type(k)
             switch t {
             case .number:
@@ -697,7 +697,10 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
                 push(int)
             } else {
                 // Conversion to Double cannot fail
-                push(num as! Double)
+                // Curiously the Swift compiler knows enough to know this won't fail and tells us off for using the `!`
+                // in a scenario when it won't fail, but helpfully doesn't provide us with a mechanism to actually get
+                // a non-optional Double. The double-parenthesis tells it we know what we're doing.
+                push((num as! Double))
             }
         case let array as Array<Any>:
             lua_createtable(self, CInt(array.count), 0)
@@ -1123,7 +1126,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             push(error.error)
         } catch {
             errored = true
-            push("Swift error: \(String(describing: error))")
+            push("Swift error: \(error.localizedDescription)")
         }
         if errored {
             // Be careful not to leave a String (or anything else) in the stack frame here, because it won't get cleaned up,
