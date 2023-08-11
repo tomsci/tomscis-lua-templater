@@ -240,7 +240,9 @@ function render(filename, text, globalIncludes)
         if text == nil then
             text = assertf(readFile(path), 2, "Failed to open file %s", path)
         end
-        ctx.includes[path] = text
+        if path then
+            ctx.includes[path] = text
+        end
         write = customWriteFn
         doRender(path or "<eval>", text, ctx, locals)
         write = origWrite
