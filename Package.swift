@@ -47,6 +47,7 @@ let package = Package(
             ],
             publicHeadersPath: "include",
             cSettings: [
+                .define("LUA_USE_POSIX"),
                 .headerSearchPath("src"),
             ])
     ]

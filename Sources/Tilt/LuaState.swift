@@ -285,6 +285,9 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
 
     /// Create a new `LuaState`.
     ///
+    /// Note that because `LuaState` is defined as `UnsafeMutablePointer<lua_State>`, the state is _not_ automatically
+    /// destroyed when it goes out of scope. You must call `close()`.
+    ///
     ///     let state = LuaState(libraries: .all)
     ///
     ///     // is equivalent to:
@@ -296,6 +299,10 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         self = luaL_newstate()
         requiref(name: "_G", function: luaopen_base)
         openLibraries(libraries)
+    }
+
+    func close() {
+        lua_close(self)
     }
 
     func openLibraries(_ libraries: Libraries) {
