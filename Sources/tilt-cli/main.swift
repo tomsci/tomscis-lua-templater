@@ -1,6 +1,6 @@
 //
 //  main.swift
-//  templuater
+//  tilt-cli
 //
 //  Created by Tom Sutcliffe on 22/07/2023.
 //
@@ -10,7 +10,7 @@ import Foundation
 import Tilt
 import TiltC
 
-let L = LuaState(libraries: .all, encoding: .stringEncoding(.utf8))
+let L = LuaState(libraries: .all)
 
 if CommandLine.arguments.count != 2 {
     fatalError("Syntax: templuater <path/to/templater.lua>")

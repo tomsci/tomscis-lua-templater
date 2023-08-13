@@ -21,7 +21,7 @@ public class TiltEnvironment {
     public let L: LuaState
 
     public init() {
-        L = LuaState(libraries: .all, encoding: .stringEncoding(.utf8))
+        L = LuaState(libraries: .all)
         L.setRequireRoot(Bundle.module.url(forResource: "src", withExtension: nil)!.path, displayPrefix: "Tilt/")
         L.getglobal("require")
         try! L.pcall(arguments: "templater")

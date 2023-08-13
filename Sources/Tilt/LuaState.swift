@@ -91,6 +91,12 @@ extension Data: Pushable {
     }
 }
 
+extension String: Pushable {
+    public func push(state L: LuaState!) {
+        L.push(self, encoding: L.getDefaultStringEncoding())
+    }
+}
+
 extension Array: Pushable where Element: Pushable {
     public func push(state L: LuaState!) {
         lua_createtable(L, CInt(self.count), 0)
@@ -206,7 +212,7 @@ public struct LuaStringRef {
     let L: LuaState!
     let index: CInt
 
-    public func toString(encoding: ExtendedStringEncoding = .stringEncoding(.utf8)) -> String? {
+    public func toString(encoding: ExtendedStringEncoding? = nil) -> String? {
         return L.tostring(index, encoding: encoding)
     }
 
@@ -262,6 +268,8 @@ public struct LuaCallError: Error, Equatable, CustomStringConvertible, Localized
     public var errorDescription: String? { error }
 }
 
+fileprivate var DefaultStringEncodingRegistryKey: Int = 0
+
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
     struct Libraries: OptionSet {
@@ -308,6 +316,44 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     /// Must be the last function called on this `LuaState` pointer.
     func close() {
         lua_close(self)
+    }
+
+    /// Override the default string encoding.
+    ///
+    /// See `getDefaultStringEncoding()`. If this function is not called, the default encoding is assumed to be UTF-8.
+    func setDefaultStringEncoding(_ encoding: ExtendedStringEncoding) {
+        let val: lua_Integer
+        // Hopefully none of String.Encoding or CFStringEncoding set the top
+        // bit, so use sign bit to distinguish the two.
+        switch encoding {
+        case .stringEncoding(let enc):
+            val = lua_Integer(enc.rawValue)
+        case .cfStringEncoding(let enc):
+            val = -lua_Integer(enc.rawValue)
+        }
+        push(val)
+        lua_rawsetp(self, LUA_REGISTRYINDEX, &DefaultStringEncodingRegistryKey)
+    }
+
+    /// Get the default string encoding.
+    ///
+    /// This is the encoding which Lua strings are assumed to be in if an explicit encoding is not supplied when
+    /// converting strings to or from Lua, for example when calling `tostring()` or `push(<string>)`. By default, it is
+    /// assumed all Lua strings are (or should be) UTF-8.
+    func getDefaultStringEncoding() -> ExtendedStringEncoding {
+        let result: ExtendedStringEncoding
+        lua_rawgetp(self, LUA_REGISTRYINDEX, &DefaultStringEncodingRegistryKey)
+        if let val = tointeger(-1) {
+            if val < 0 {
+                result = .cfStringEncoding(CFStringEncodings(rawValue: Int(-val))!)
+            } else {
+                result = .stringEncoding(String.Encoding(rawValue: UInt(val)))
+            }
+        } else {
+            result = .stringEncoding(.utf8)
+        }
+        pop()
+        return result
     }
 
     func openLibraries(_ libraries: Libraries) {
@@ -441,19 +487,20 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     /// failed to be decoded using `encoding`.
     ///
     /// - Parameter index: The stack index.
-    /// - Parameter encoding: The encoding to use to decode the string data.
+    /// - Parameter encoding: The encoding to use to decode the string data, or `nil` to use the default encoding.
     /// - Parameter convert: If true and the value at the given index is not a
     ///   Lua string, it will be converted to a string (invoking `__tostring`
     ///   metamethods if necessary) before being decoded.
     /// - Returns: the value as a String, or `nil` if it could not be converted.
-    func tostring(_ index: CInt, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, encoding: ExtendedStringEncoding? = nil, convert: Bool = false) -> String? {
+        let enc = encoding ?? getDefaultStringEncoding()
         if let data = todata(index) {
-            return String(data: data, encoding: encoding)
+            return String(data: data, encoding: enc)
         } else if convert {
             var len: Int = 0
             let ptr = luaL_tolstring(self, index, &len)!
             let buf = UnsafeBufferPointer(start: ptr, count: len)
-            let result = String(data: Data(buffer: buf), encoding: encoding)
+            let result = String(data: Data(buffer: buf), encoding: enc)
             pop() // the val from luaL_tolstring
             return result
         } else {
@@ -500,7 +547,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return b != 0
     }
 
-    func tostringarray(_ index: CInt, encoding: ExtendedStringEncoding, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, encoding: ExtendedStringEncoding? = nil, convert: Bool = false) -> [String]? {
         guard type(index) == .table else {
             return nil
         }
@@ -568,11 +615,11 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return tostring(index, key: key, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    func tostring(_ index: CInt, key: String, encoding: ExtendedStringEncoding, convert: Bool = false) -> String? {
+    func tostring(_ index: CInt, key: String, encoding: ExtendedStringEncoding? = nil, convert: Bool = false) -> String? {
         return getfield(index, key: key, { tostring($0, encoding: encoding, convert: convert) })
     }
 
-    func tostringarray(_ index: CInt, key: String, encoding: ExtendedStringEncoding, convert: Bool = false) -> [String]? {
+    func tostringarray(_ index: CInt, key: String, encoding: ExtendedStringEncoding? = nil, convert: Bool = false) -> [String]? {
         return getfield(index, key: key, { tostringarray($0, encoding: encoding, convert: convert) })
     }
 
