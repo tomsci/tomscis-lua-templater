@@ -49,6 +49,10 @@ let package = Package(
             cSettings: [
                 .define("LUA_USE_POSIX"),
                 .headerSearchPath("src"),
-            ])
+            ]),
+        .testTarget(
+            name: "tilt-test",
+            dependencies: ["Tilt"]
+        )
     ]
 )

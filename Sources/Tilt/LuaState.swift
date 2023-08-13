@@ -36,6 +36,8 @@ import TiltC
 ///     assert(state.toint(-1)! == 1234)
 public typealias LuaState = UnsafeMutablePointer<lua_State>
 
+public typealias lua_Integer = TiltC.lua_Integer
+
 public protocol Pushable {
     func push(state L: LuaState!)
 }
@@ -301,6 +303,9 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         openLibraries(libraries)
     }
 
+    /// Destroy and clean up the Lua state.
+    ///
+    /// Must be the last function called on this `LuaState` pointer.
     func close() {
         lua_close(self)
     }
