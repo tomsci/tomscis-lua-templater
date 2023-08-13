@@ -6,8 +6,17 @@
 //
 
 import Foundation
-import TiltC
 
+/// The Swift interface to Tilt.
+///
+/// After constructing a `TiltEnvironment` object, there are several configurations that can be made by directly
+/// manipulating the Lua environment `L`.
+///
+/// Set a global function `readFile(path)` to customise where template includes are loaded from.
+///
+/// Set a global function `printWarning(text)` to customise where the output of `warning(...)` goes.
+///
+/// Call the global function `setContext(dict)` to add `dict` to the environment used by templates.
 public class TiltEnvironment {
     public let L: LuaState
 
@@ -16,6 +25,10 @@ public class TiltEnvironment {
         L.setRequireRoot(Bundle.module.url(forResource: "src", withExtension: nil)!.path, displayPrefix: "Tilt/")
         L.getglobal("require")
         try! L.pcall(arguments: "templater")
+    }
+
+    deinit {
+        L.close()
     }
 
     public struct RenderResult {
