@@ -28,14 +28,6 @@ final class LuaTests: XCTestCase {
         L = nil
     }
 
-//    func testExample() throws {
-//        // This is an example of a functional test case.
-//        // Use XCTAssert and related functions to verify your tests produce the correct results.
-//        // Any test you write for XCTest can be annotated as throws and async.
-//        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-//        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
-//    }
-
     func testSafeLibraries() {
         L = LuaState(libraries: .safe)
         let unsafeLibs = ["os", "io", "package", "debug"]
@@ -132,10 +124,6 @@ final class LuaTests: XCTestCase {
 
         L.setDefaultStringEncoding(.stringEncoding(.isoLatin1))
         XCTAssertEqual(L.tostring(4), "îsø") // this should now succeed
-    }
-
-    func testToAnyHashable() {
-        // TODO
     }
 
     func test_ipairs() {
@@ -306,4 +294,97 @@ final class LuaTests: XCTestCase {
         }
     }
 
+    func test_pushany() {
+        L = LuaState(libraries: [])
+
+        L.pushany(1234)
+        XCTAssertEqual(L.toany(1) as? Int, 1234)
+        L.pop()
+
+        L.pushany("string")
+        XCTAssertNil(L.toany(1, guessType: false) as? String)
+        XCTAssertNotNil(L.toany(1, guessType: true) as? String)
+        XCTAssertNotNil(L.toany(1, guessType: false) as? LuaStringRef)
+        L.pop()
+
+        // This is directly pushable (because Int is)
+        let intArray = [11, 22, 33]
+        L.pushany(intArray)
+        XCTAssertEqual(L.type(1), .table)
+        L.pop()
+
+        struct Foo {
+            let val: String
+        }
+        L.registerMetatable(for: Foo.self, functions: [:])
+        let fooArray = [Foo(val: "a"), Foo(val: "b")]
+        L.pushany(fooArray)
+        XCTAssertEqual(L.type(1), .table)
+        let guessAnyArray = L.toany(1, guessType: true) as? Array<Any>
+        XCTAssertNotNil(guessAnyArray)
+        XCTAssertEqual((guessAnyArray?[0] as? Foo)?.val, "a")
+        let typedArray = guessAnyArray as? Array<Foo>
+        XCTAssertNotNil(typedArray)
+
+        let arr: [Foo]? = L.tovalue(1)
+        XCTAssertNotNil(arr)
+        L.pop()
+    }
+
+    func test_pushany_table() {
+        L = LuaState(libraries: [])
+
+        let stringArray = ["abc", "def"]
+        L.pushany(stringArray)
+        let stringArrayResult: [String]? = L.tovalue(1)
+        XCTAssertEqual(stringArrayResult, stringArray)
+        L.pop()
+
+        let stringArrayArray = [["abc", "def"], ["123"]]
+        L.pushany(stringArrayArray)
+        let stringArrayArrayResult: [[String]]? = L.tovalue(1)
+        XCTAssertEqual(stringArrayArrayResult, stringArrayArray)
+        L.pop()
+
+        let intBoolDict = [ 1: true, 2: false, 3: true ]
+        L.pushany(intBoolDict)
+        let intBoolDictResult: [Int: Bool]? = L.tovalue(1)
+        XCTAssertEqual(intBoolDictResult, intBoolDict)
+        L.pop()
+
+        let stringDict = ["abc": "ABC", "def": "DEF"]
+        L.pushany(stringDict)
+        let stringDictResult: [String: String]? = L.tovalue(1)
+        XCTAssertEqual(stringDictResult, stringDict)
+        L.pop()
+
+        let arrayDictDict = [["abc": [1: "1", 2: "2"], "def": [5: "5", 6: "6"]]]
+        L.pushany(arrayDictDict)
+        let arrayDictDictResult: [[String : [Int : String]]]? = L.tovalue(1)
+        XCTAssertEqual(arrayDictDictResult, arrayDictDict)
+        L.pop()
+    }
+
+    func testNonHashableTableKeys() {
+        L = LuaState(libraries: [])
+        struct NonHashable {
+            let nope = true
+        }
+        L.registerMetatable(for: NonHashable.self, functions: [:])
+        lua_newtable(L)
+        L.pushuserdata(NonHashable())
+        L.push(true)
+        lua_settable(L, -3)
+        let tbl = L.toany(1, guessType: true) as? [LuaNonHashable: Bool]
+        XCTAssertNotNil(tbl)
+    }
+
+    func testAnyHashable() {
+        // Just to make sure casting to AnyHashable behaves as expected
+        let x: Any = 1
+        XCTAssertNotNil(x as? AnyHashable)
+        struct NonHashable {}
+        let y: Any = NonHashable()
+        XCTAssertNil(y as? AnyHashable)
+    }
 }

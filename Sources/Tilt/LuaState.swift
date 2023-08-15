@@ -212,6 +212,11 @@ public struct LuaStringRef {
     let L: LuaState!
     let index: CInt
 
+    public init(L: LuaState!, index: CInt) {
+        self.L = L
+        self.index = L.absindex(index)
+    }
+
     public func toString(encoding: ExtendedStringEncoding? = nil) -> String? {
         return L.tostring(index, encoding: encoding)
     }
@@ -219,11 +224,26 @@ public struct LuaStringRef {
     public func toData() -> Data {
         return L.todata(index)! // Definitely won't error (assuming index still valid) as type has already been checked
     }
+
+    public func guessType() -> AnyHashable {
+        if let str = L.tostring(index, convert: false) {
+            // This will fail if the string isn't valid in the default encoding
+            return str
+        } else {
+            return L.todata(index)!
+        }
+    }
+
 }
 
 public struct LuaTableRef {
     let L: LuaState!
     let index: CInt
+
+    public init(L: LuaState!, index: CInt) {
+        self.L = L
+        self.index = L.absindex(index)
+    }
 
     public func toArray() -> [Any]? {
         var result: [Any] = []
@@ -252,11 +272,238 @@ public struct LuaTableRef {
         }
         return result
     }
+
+    func guessType() -> Any {
+        var hasIntKeys = false
+        var hasNonIntKeys = false
+        for (k, _) in L.pairs(index) {
+            let t = L.type(k)
+            switch t {
+            case .number:
+                if L.toint(k) != nil {
+                    hasIntKeys = true
+                } else {
+                    hasNonIntKeys = true
+                }
+            default:
+                hasNonIntKeys = true
+            }
+        }
+        if hasNonIntKeys {
+            var result: [AnyHashable: Any] = [:]
+            for (k, v) in L.pairs(index) {
+                let key = L.toany(k, guessType: true)!
+                let hashableKey: AnyHashable = (key as? AnyHashable) ?? (LuaNonHashable(key) as AnyHashable)
+                result[hashableKey] = L.toany(v, guessType: true)!
+            }
+            return result
+        } else if hasIntKeys {
+            var result: [Any] = []
+            for _ in L.ipairs(index) {
+                result.append(L.toany(-1)!)
+            }
+            return result
+        } else {
+            // Empty table, assume array
+            return Array<Any>()
+        }
+    }
+
+    public func resolve<T>() -> T? {
+        let opt: T? = nil
+        let test = { (val: Any) in
+            return (val as? T) != nil
+        }
+        return doResolve(as: isArrayType(opt) ? .array : .dict, test: test) as? T
+    }
+
+    enum TableType {
+        case array
+        case dict
+    }
+
+    func doResolve(as tableType: TableType, test: (Any) -> Bool) -> Any? {
+        switch tableType {
+        case .array:
+            return doResolveArray(test: test)
+        case .dict:
+            return doResolveDict(test: test)
+        }
+    }
+
+    func doResolveArray(test: (Any) -> Bool) -> Any? {
+        var result = Array<Any>()
+        func good(_ val: Any, keepOnSuccess: Bool = false) -> Bool {
+            result.append(val)
+            let success = test(result)
+            if !success || !keepOnSuccess {
+                result.removeLast()
+            }
+            return success
+        }
+        for _ in L.ipairs(index) {
+            let value = L.toany(-1, guessType: false)! // toany cannot fail on a valid non-nil index
+            if good(value, keepOnSuccess: true) {
+                continue
+            } else if let ref = value as? LuaStringRef {
+                if let str = ref.toString() {
+                    if good(str, keepOnSuccess: true) {
+                        continue
+                    }
+                }
+                // Otherwise try as data
+                if !good(ref.toData(), keepOnSuccess: true) {
+                    // Nothing works
+                    return nil
+                }
+            } else if let ref = value as? LuaTableRef {
+                let tableType: TableType
+                if good(Array<Any>()) {
+                    tableType = .array
+                } else if good(Dictionary<AnyHashable, Any>()) {
+                    tableType = .dict
+                } else {
+                    // T isn't happy with either an array or a table here, give up
+                    return nil
+                }
+                if let val = ref.doResolve(as: tableType, test: { good($0) }) {
+                    result.append(val)
+                    assert(test(result)) // Shouldn't ever fail, but...
+                }
+            } else {
+                // Nothing from toany has made T happy, give up
+                return nil
+            }
+        }
+        return result
+    }
+
+    func doResolveDict(test: (Any) -> Bool) -> Any? {
+        var result = Dictionary<AnyHashable, Any>()
+        func good(_ key: AnyHashable, _ val: Any, keepOnSuccess: Bool = false) -> Bool {
+            assert(result[key] == nil)
+            result[key] = val
+            let success = test(result)
+            if !success || !keepOnSuccess {
+                result[key] = nil
+            }
+            return success
+        }
+
+        for (k, v) in L.pairs(index) {
+            let key = L.toany(k, guessType: false) as? AnyHashable
+            let val = L.toany(v, guessType: false)!
+            if let key, good(key, val, keepOnSuccess: true) {
+                // Carry on
+                continue
+            }
+
+            let possibleKeys = makePossibleKeys(L.toany(k, guessType: false)!)
+            let possibleValues = makePossibles(val)
+            var found = false
+            for pkey in possibleKeys {
+                for pval in possibleValues {
+                    if good(pkey, pval) {
+                        // Since LuaTableRef/LuaStringRef do not implement Hashable, we can ignore the need to resolve
+                        // pkey. And pval only needs checking against LuaTableRef.
+                        let innerTest = { good(pkey, $0) }
+                        if (pval as? Array<Any>) != nil {
+                            if let array = (val as! LuaTableRef).doResolveArray(test: innerTest) {
+                                result[pkey] = array
+                                found = true
+                            }
+                        } else if (pval as? Dictionary<AnyHashable, Any>) != nil {
+                            if let dict = (val as! LuaTableRef).doResolveDict(test: innerTest) {
+                                result[pkey] = dict
+                                found = true
+                            }
+                        } else {
+                            result[pkey] = pval
+                            found = true
+                        }
+
+                        if found {
+                            break
+                        }
+                    }
+                }
+                if found {
+                    break
+                }
+            }
+
+            if !found {
+                // This key and value couldn't be resolved
+                return nil
+            }
+        }
+        return result
+    }
+
+    private func makePossibleKeys(_ val: Any) -> [AnyHashable] {
+        var result: [AnyHashable] = []
+        if let ref = val as? LuaStringRef {
+            if let str = ref.toString() {
+                result.append(str)
+            }
+            result.append(ref.toData())
+        }
+        if let hashable = val as? AnyHashable {
+            result.append(hashable)
+        }
+        return result
+    }
+
+    private func makePossibles(_ val: Any) -> [Any] {
+        var result: [Any] = []
+        if let ref = val as? LuaStringRef {
+            if let str = ref.toString() {
+                result.append(str)
+            }
+            result.append(ref.toData())
+        } else if (val as? LuaTableRef) != nil {
+            // An array table can always be represented as a dictionary, but not vice versa, so put Dictionary first
+            // so that an untyped top-level T (which will result in the first option being chosen) at least doesn't
+            // lose information and behaves consistently.
+            result.append(Dictionary<AnyHashable, Any>())
+            result.append(Array<Any>())
+        }
+        result.append(val)
+        return result
+    }
 }	
 
 public struct LuaClosureRef {
     let L: LuaState!
     let index: CInt
+
+    public init(L: LuaState!, index: CInt) {
+        self.L = L
+        self.index = L.absindex(index)
+    }
+}
+
+// When a nonhashable value is used in a table key
+public struct LuaNonHashable: Hashable {
+    public let val: Any
+    private var ptr: UnsafePointer<Any> {
+        get {
+            var result: UnsafePointer<Any>?
+            withUnsafePointer(to: val) { ptr in
+                result = ptr
+            }
+            return result!
+        }
+    }
+    public init(_ val: Any) {
+        self.val = val
+    }
+    public static func == (lhs: LuaNonHashable, rhs: LuaNonHashable) -> Bool {
+        return lhs.ptr == rhs.ptr
+    }
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ptr)
+    }
 }
 
 public struct LuaCallError: Error, Equatable, CustomStringConvertible, LocalizedError {
@@ -463,6 +710,10 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return String(cString: lua_typename(self, index))
     }
 
+    func absindex(_ index: CInt) -> CInt {
+        return lua_absindex(self, index)
+    }
+
     func isnone(_ index: CInt) -> Bool {
         return type(index) == nil
     }
@@ -575,7 +826,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     }
 
     func getfield<T>(_ index: CInt, key: String, _ accessor: (CInt) -> T?) -> T? {
-        let absidx = lua_absindex(self, index)
+        let absidx = absindex(index)
         let t = self.type(absidx)
         if t != .table && t != .userdata {
             return nil // Prevent lua_gettable erroring
@@ -635,8 +886,26 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         return tostringarray(index, key: key, encoding: .stringEncoding(encoding), convert: convert)
     }
 
-    // we're not worrying about Array<Foo> technically being hashable if Foo is, this is for primitive hashables only
-    func toanyhashable(_ index: CInt, guessType: Bool = true) -> AnyHashable? {
+    /// Convert a value on the Lua stack to a Swift `Any`.
+    ///
+    /// If `guessType` is true, `table` and `string` values are automatically converted to
+    /// `Array`/`Dictionary`/`String`/`Data` based on their contents:
+    ///
+    /// * `string` is converted to `String` if the bytes are valid in the default string encoding, otherwise to `Data`.
+    /// * `table` is converted to `Dictionary<AnyHashable, Any>` if there are any non-integer keys in the table,
+    ///   otherwise to `Array<Any>`.
+    ///
+    /// If `guessType` is `false`, the placeholder types `LuaStringRef` and `LuaTableRef` are used for `string` and
+    /// `table` values respectively.
+    ///
+    /// Regardless of `guessType`, the types `LuaClosureRef` and `LuaNonHashable` may be used to represent types that
+    /// do not directly correspond to a Swift type.
+    ///
+    /// - Parameter index: The stack index.
+    /// - Parameter guessType: Whether to automatically convert `string` and `table` values based on heuristics.
+    /// - Returns: An `Any` representing the given index. Will only return `nil` if `index` refers to a `nil`
+    ///   Lua value, all non-nil values will be converted to _some_ sort of `Any`.
+    func toany(_ index: CInt, guessType: Bool = true) -> Any? {
         guard let t = type(index) else {
             return nil
         }
@@ -654,33 +923,18 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
                 return tonumber(index)
             }
         case .string:
+            let ref = LuaStringRef(L: self, index: index)
             if guessType {
-                return guessString(index: index)
+                return ref.guessType()
             } else {
-                return nil // Should LuaStringRef be Hashable?
+                return ref
             }
-        default:
-            return nil
-        }
-    }
-
-    // Unless lua_isnoneornil(L, index), this will always return some(Any)
-    func toany(_ index: CInt, guessType: Bool = true) -> Any? {
-        if let hashable = toanyhashable(index, guessType: guessType) {
-            return hashable
-        }
-        guard let t = type(index) else {
-            return nil
-        }
-        switch (t) {
-        case .string:
-            assert(!guessType) // Otherwise toanyhashable would have done it
-            return LuaStringRef(L: self, index: index)
         case .table:
+            let ref = LuaTableRef(L: self, index: index)
             if guessType {
-                return guessTable(index: index)
+                return ref.guessType()
             } else {
-                return LuaTableRef(L: self, index: index)
+                return ref
             }
         case .function:
             if let fn = lua_tocfunction(self, index) {
@@ -692,72 +946,6 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             return touserdata(index)
         case .thread:
             return lua_tothread(self, index)
-        default:
-            // Remaining types should have been handled by toanyhashable
-            fatalError("Should not hit default in toany switch!")
-        }
-    }
-
-    private func guessString(index: CInt) -> AnyHashable {
-        if let str = tostring(index, convert: false) {
-            // This should fail if the string isn't valid in the default encoding?
-            return str
-        } else {
-            return todata(index)!
-        }
-    }
-
-    private func guessTable(index: CInt) -> Any {
-        var hasIntKeys = false
-        var hasStringKeys = false
-        var hasHashableKeys = false // that also aren't strings
-        var hasNonHashableKeys = false
-        for (k, _) in pairs(index) {
-            let t = type(k)
-            switch t {
-            case .number:
-                if toint(k) != nil {
-                    hasIntKeys = true
-                } else {
-                    hasHashableKeys = true
-                }
-            case .string:
-                if tostring(k) != nil {
-                    hasStringKeys = true
-                } else {
-                    hasHashableKeys = true
-                }
-            default:
-                if toanyhashable(index, guessType: true) != nil {
-                    hasHashableKeys = true
-                } else {
-                    hasNonHashableKeys = true
-                }
-            }
-        }
-        if hasNonHashableKeys {
-            fatalError("Cannot represent a table with nonhashable keys")
-        } else if hasHashableKeys || (hasStringKeys && hasIntKeys) {
-            var result: [AnyHashable: Any] = [:]
-            for (k, v) in pairs(index) {
-                result[toanyhashable(k, guessType: true)!] = toany(v, guessType: true)!
-            }
-            return result
-        } else if hasStringKeys {
-            var result: [String: Any] = [:]
-            for (k, v) in pairs(index) {
-                result[tostring(k)!] = toany(v, guessType: true)!
-            }
-            return result
-        } else if hasIntKeys {
-            var result: [Any] = []
-            for _ in ipairs(index) {
-                result.append(toany(-1)!)
-            }
-            return result
-        } else {
-            // Empty table, assume array
-            return Array<Any>()
         }
     }
 
@@ -813,7 +1001,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
             precondition(requiredType != .nilType, "Cannot iterate with a required type of LUA_TNIL")
             precondition(L.type(index) == .table, "Cannot iterate something that isn't a table!")
             self.L = L
-            self.index = lua_absindex(L, index)
+            self.index = L.absindex(index)
             self.requiredType = requiredType
             top = resetTop ? lua_gettop(L) : nil
             if let start {
@@ -892,7 +1080,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         let top: CInt
         init(_ L: LuaState, _ index: CInt) {
             self.L = L
-            self.index = lua_absindex(L, index)
+            self.index = L.absindex(index)
             top = lua_gettop(L)
             lua_pushnil(L) // initial k
         }
@@ -1083,27 +1271,22 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     /// * `number` converts to `Int` if representable, otherwise `Double`
     /// * `boolean` converts to `Bool`
     /// * `thread` converts to `LuaState`
-    /// * `string` converts to either `String` or `Data` (based on which of
-    ///   those `T` is).
-    /// * `userdata` any conversion that `as?` can perform on an `Any` referring
-    ///   to that type.
+    /// * `string` converts to `String` or `Data` depending on which `T` is
+    /// * `table` converts to either an `Array` or a `Dictionary` depending on `T`. The table contents are recursively
+    ///   converted to match the type of `T`.
+    /// * `userdata` any conversion that `as?` can perform on an `Any` referring to that type.
     func tovalue<T>(_ index: CInt) -> T? {
-        let value = toany(index)
+        let value = toany(index, guessType: false)
         if let directCast = value as? T {
             return directCast
         } else if let ref = value as? LuaStringRef {
             if T.self == String.self {
-                return ref.toString(encoding:.stringEncoding(.utf8)) as? T
+                return ref.toString() as? T
             } else /*if T.self == Data.self*/ {
                 return ref.toData() as? T
             }
         } else if let ref = value as? LuaTableRef {
-            // TODO this is a bit broken, LuaXyzRefs in the Array/Dict won't get expanded...
-            if T.self == Array<Any>.self {
-                return ref.toArray() as? T
-            } else if T.self == Dictionary<AnyHashable, Any>.self {
-                return ref.toDict() as? T
-            }
+            return ref.resolve()
         }
         return nil
     }
@@ -1247,5 +1430,14 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         } else {
             return nret
         }
+    }
+}
+
+fileprivate func isArrayType<T>(_: T?) -> Bool {
+    let emptyArray = Array<Any>()
+    if let _ = emptyArray as? T {
+        return true
+    } else {
+        return false
     }
 }
