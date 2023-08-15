@@ -268,7 +268,7 @@ public struct LuaCallError: Error, Equatable, CustomStringConvertible, Localized
     public var errorDescription: String? { error }
 }
 
-fileprivate var DefaultStringEncodingRegistryKey: Int = 0
+fileprivate var StateRegistryKey: Int = 0
 
 public extension UnsafeMutablePointer where Pointee == lua_State {
 
@@ -318,21 +318,41 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
         lua_close(self)
     }
 
+    private class _State {
+        var defaultStringEncoding = ExtendedStringEncoding.stringEncoding(.utf8)
+        var metatableDict = Dictionary<String, Array<Any.Type>>()
+    }
+
+    private func getState() -> _State {
+        if let state = maybeGetState() {
+            return state
+        }
+        let state = _State()
+        // Register a metatable for this type with a fixed name to avoid infinite recursion of getMetatableName
+        // trying to call getState()
+        let mtName = "LuaState._State"
+        doRegisterMetatable(typeName: mtName, functions: [:])
+        pop() // metatable
+        pushuserdata(any: state, metatableName: mtName)
+        lua_rawsetp(self, LUA_REGISTRYINDEX, &StateRegistryKey)
+        return state
+    }
+
+    private func maybeGetState() -> _State? {
+        lua_rawgetp(self, LUA_REGISTRYINDEX, &StateRegistryKey)
+        var result: _State? = nil
+        if let state: _State = touserdata(-1) {
+            result = state
+        }
+        pop()
+        return result
+    }
+
     /// Override the default string encoding.
     ///
     /// See `getDefaultStringEncoding()`. If this function is not called, the default encoding is assumed to be UTF-8.
     func setDefaultStringEncoding(_ encoding: ExtendedStringEncoding) {
-        let val: lua_Integer
-        // Hopefully none of String.Encoding or CFStringEncoding set the top
-        // bit, so use sign bit to distinguish the two.
-        switch encoding {
-        case .stringEncoding(let enc):
-            val = lua_Integer(enc.rawValue)
-        case .cfStringEncoding(let enc):
-            val = -lua_Integer(enc.rawValue)
-        }
-        push(val)
-        lua_rawsetp(self, LUA_REGISTRYINDEX, &DefaultStringEncodingRegistryKey)
+        getState().defaultStringEncoding = encoding
     }
 
     /// Get the default string encoding.
@@ -341,19 +361,7 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     /// converting strings to or from Lua, for example when calling `tostring()` or `push(<string>)`. By default, it is
     /// assumed all Lua strings are (or should be) UTF-8.
     func getDefaultStringEncoding() -> ExtendedStringEncoding {
-        let result: ExtendedStringEncoding
-        lua_rawgetp(self, LUA_REGISTRYINDEX, &DefaultStringEncodingRegistryKey)
-        if let val = tointeger(-1) {
-            if val < 0 {
-                result = .cfStringEncoding(CFStringEncodings(rawValue: Int(-val))!)
-            } else {
-                result = .stringEncoding(String.Encoding(rawValue: UInt(val)))
-            }
-        } else {
-            result = .stringEncoding(.utf8)
-        }
-        pop()
-        return result
+        return maybeGetState()?.defaultStringEncoding ?? .stringEncoding(.utf8)
     }
 
     func openLibraries(_ libraries: Libraries) {
@@ -1101,7 +1109,17 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     }
 
     private func getMetatableName(for type: Any.Type) -> String {
-        return "SwiftType_" + String(describing: type)
+        let prefix = "SwiftType_" + String(describing: type)
+        let state = getState()
+        if state.metatableDict[prefix] == nil {
+            state.metatableDict[prefix] = []
+        }
+        var index = state.metatableDict[prefix]!.firstIndex(where: { $0 == type })
+        if index == nil {
+            state.metatableDict[prefix]!.append(type)
+            index = state.metatableDict[prefix]!.count - 1
+        }
+        return index! == 0 ? prefix : "\(prefix)[\(index!)]"
     }
 
     private func doRegisterMetatable(typeName: String, functions: [String: lua_CFunction]) {
@@ -1170,20 +1188,25 @@ public extension UnsafeMutablePointer where Pointee == lua_State {
     ///   any other type (for example, an integer) it will not be converted to
     ///   that type in Lua. Use `pushany()` instead to automatically convert
     ///   types to their Lua native representation where possible.
-    func pushuserdata(_ val: Any) {
-        let tname = getMetatableName(for: Swift.type(of: val))
+    func pushuserdata<T>(_ val: T) {
+        let anyval = val as Any
+        let tname = getMetatableName(for: Swift.type(of: anyval))
+        pushuserdata(any: anyval, metatableName: tname)
+    }
+
+    private func pushuserdata(any val: Any, metatableName: String) {
         let udata = lua_newuserdatauv(self, MemoryLayout<Any>.size, 0)!
         let udataPtr = udata.bindMemory(to: Any.self, capacity: 1)
         udataPtr.initialize(to: val)
 
-        if luaL_getmetatable(self, tname) == LUA_TNIL {
+        if luaL_getmetatable(self, metatableName) == LUA_TNIL {
             pop()
             if luaL_getmetatable(self, Self.DefaultMetatableName) == LUA_TTABLE {
                 // The stack is now right for the lua_setmetatable call below
             } else {
                 pop()
-                print("Implicitly registering empty metatable for type \(tname)")
-                doRegisterMetatable(typeName: tname, functions: [:])
+                print("Implicitly registering empty metatable for type \(metatableName)")
+                doRegisterMetatable(typeName: metatableName, functions: [:])
             }
         }
         lua_setmetatable(self, -2) // pops metatable
