@@ -14,11 +14,12 @@ let package = Package(
         .library(
             name: "Tilt",
             targets: [
-                "TiltC",
                 "Tilt",
             ]),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(path: "LuaSwift"),
+    ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
@@ -26,33 +27,18 @@ let package = Package(
             name: "tilt-cli",
             dependencies: [
                 "Tilt",
-                "TiltC",
             ]),
         .target(
             name: "Tilt",
             dependencies: [
-                "TiltC",
+                .product(name: "Lua", package: "LuaSwift")
             ],
             resources: [
                 .copy("src"),
             ]),
-        .target(
-            name: "TiltC",
-            dependencies: [],
-            exclude: [
-                "src/ltests.c",
-                "src/lua.c",
-                "src/onelua.c",
-                "src/testes",
-            ],
-            publicHeadersPath: "include",
-            cSettings: [
-                .define("LUA_USE_POSIX"),
-                .headerSearchPath("src"),
-            ]),
-        .testTarget(
-            name: "tilt-test",
-            dependencies: ["Tilt"]
-        )
+        // .testTarget(
+        //     name: "tilt-test",
+        //     dependencies: ["Tilt"]
+        // )
     ]
 )

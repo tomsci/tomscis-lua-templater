@@ -6,9 +6,8 @@
 //
 
 import Foundation
-
-import Tilt
-import TiltC
+import Lua
+import CLua
 
 let L = LuaState(libraries: .all)
 
