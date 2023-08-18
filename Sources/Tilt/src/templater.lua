@@ -1,12 +1,24 @@
+--[[
+Copyright (c) 2023 Tom Sutcliffe
 
-function makeArrayIterator(array)
-    local function iterator(state)
-        state.index = state.index + 1
-        return state.array[state.index]
-    end
-    local state = { array = array, index = 0 }
-    return iterator, state
-end
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+]]
 
 function countNewlines(text)
     -- Is there a better way to do this?
@@ -154,7 +166,8 @@ function render(filename, text, globalIncludes)
     local env = makeSandbox()
     local result = { n = 0 }
     local ctx = {
-        includes = { [filename] = text},
+        includes = { [filename] = true},
+        sources = {},
         result = result,
         frame = { env = env },
     }
@@ -216,12 +229,12 @@ function render(filename, text, globalIncludes)
     end
 
     env.eval = function(text, pathHint)
-        doRender(pathHint or "<eval>", text, ctx, getLocals())
+        doRender(pathHint, text, ctx, getLocals())
     end
 
     local function doInclude(path, locals)
         local newText = assertf(readFile(path), 2, "Failed to open file %s", path)
-        ctx.includes[path] = newText
+        ctx.includes[path] = true
         doRender(path, newText, ctx, locals)
     end
 
@@ -239,18 +252,16 @@ function render(filename, text, globalIncludes)
         locals.write = customWriteFn
         if text == nil then
             text = assertf(readFile(path), 2, "Failed to open file %s", path)
-        end
-        if path then
-            ctx.includes[path] = text
+            ctx.includes[path] = true
         end
         write = customWriteFn
-        doRender(path or "<eval>", text, ctx, locals)
+        doRender(path, text, ctx, locals)
         write = origWrite
         return table.concat(result)
     end
 
     local function errorHandler(err)
-        -- Walk the stack to find the first source matching anything in includes, and get the line number from there
+        -- Walk the stack to find the first source matching anything in sources, and get the line number from there
         local errLine, errFile, errText
         local pos = 2
         while true do
@@ -259,10 +270,18 @@ function render(filename, text, globalIncludes)
                 break
             end
             local sourceFile = info.source:match("^@(.*)")
-            if sourceFile and ctx.includes[sourceFile] then
+            local found = nil
+            for _, source in ipairs(ctx.sources) do
+                if source.filename == sourceFile then
+                    found = source.text
+                    break
+                end
+            end
+            -- if sourceFile and ctx.includes[sourceFile] then
+            if found then
                 errLine = info.currentline
                 errFile = sourceFile
-                errText = getLine(ctx.includes[sourceFile], errLine)
+                errText = getLine(found, errLine)
                 break
             end
             pos = pos + 1
@@ -294,6 +313,10 @@ function render(filename, text, globalIncludes)
 end
 
 function doRender(filename, text, ctx, locals)
+    if filename == nil then
+        filename = string.format("<eval#%d>", #ctx.sources + 1)
+    end
+    table.insert(ctx.sources, { filename = filename, text = text })
     local pos = 1
     local frame = {
         fileName = filename,
