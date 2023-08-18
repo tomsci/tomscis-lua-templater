@@ -36,9 +36,9 @@ let package = Package(
             resources: [
                 .copy("src"),
             ]),
-        // .testTarget(
-        //     name: "tilt-test",
-        //     dependencies: ["Tilt"]
-        // )
+        .testTarget(
+            name: "tilt-test",
+            dependencies: ["Tilt"]
+        )
     ]
 )
