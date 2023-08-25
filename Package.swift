@@ -33,9 +33,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Lua", package: "LuaSwift")
             ],
-            resources: [
-                .copy("src"),
-            ]),
+            plugins: [
+                .plugin(name: "EmbedLuaPlugin", package: "LuaSwift")
+            ]
+        ),
         .testTarget(
             name: "tilt-test",
             dependencies: ["Tilt"]

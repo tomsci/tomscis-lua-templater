@@ -36,7 +36,8 @@ public class TiltEnvironment {
 
     public init() {
         L = LuaState(libraries: .all)
-        L.setRequireRoot(Bundle.module.url(forResource: "src", withExtension: nil)!.path, displayPrefix: "Tilt/")
+        L.addModules(lua_sources)
+        L.setRequireRoot(nil)
         L.getglobal("require")
         try! L.pcall("templater")
     }

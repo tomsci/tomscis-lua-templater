@@ -33,9 +33,6 @@ final class TiltTests: XCTestCase {
     }
 
     func test_templater_tests() throws -> Void {
-        let package = env.L.globals["package"]
-        let path = package["path"].tostring()!
-        let testsPath = try! package["searchpath"]("templater_tests", path).tostring()!
-        try env.L.dofile(testsPath)
+        try env.L.globals["require"]("templater_tests")
     }
 }
