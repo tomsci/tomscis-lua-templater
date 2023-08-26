@@ -1,3 +1,6 @@
+-- Copyright (c) 2023 Tom Sutcliffe
+-- See LICENSE file for license information.
+
 local function unhandledType(t, outputFormat)
     if outputFormat == "json" then
         local s = tostring(t):gsub("[\"\b\f\n\r\t\\]", {

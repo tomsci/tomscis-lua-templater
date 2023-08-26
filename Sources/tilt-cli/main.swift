@@ -1,9 +1,5 @@
-//
-//  main.swift
-//  tilt-cli
-//
-//  Created by Tom Sutcliffe on 22/07/2023.
-//
+// Copyright (c) 2023 Tom Sutcliffe
+// See LICENSE file for license information.
 
 import Foundation
 import Lua

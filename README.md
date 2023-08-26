@@ -115,7 +115,8 @@ Anything that isn't delimited by one of the above block sequences is considered 
 By combining a function definition with a partial code block it is possible to declare something that behaves a lot like a macro in other templating languages. For example:
 
 ```
-{% function mymacro(arg1, arg2)
+{%
+function mymacro(arg1, arg2)
     -- Maybe do something with args, then terminate this code block without
     -- ending the function, to make this a partial code block which can be
     -- combined with some text and expression blocks...
@@ -123,10 +124,11 @@ By combining a function definition with a partial code block it is possible to d
     Arg 1 is: {{arg1}}
     Arg 2 is: {{arg2}}
 
-{# ...and now end the function, which completes the partial code block and
-thereby completes the definition of 'mymacro()' #}
-
-{% end %}
+{%
+    -- ...and now end the function, which completes the partial code block and
+    -- thereby completes the definition of 'mymacro()'
+end
+%}
 
 ...
 
