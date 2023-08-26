@@ -26,6 +26,7 @@ final class TiltTests: XCTestCase {
 
     override func setUpWithError() throws {
         env = TiltEnvironment()
+        env.L.addModules(lua_sources)
     }
 
     override func tearDownWithError() throws {

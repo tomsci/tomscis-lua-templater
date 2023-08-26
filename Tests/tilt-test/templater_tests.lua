@@ -21,7 +21,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-require("templater")
+if not pcall(require, "templater") then
+    -- Support for being run from the shell
+    package.path = "../../Sources/Tilt/src/?.lua"
+    require("templater")
+end
 
 local readFileData = {}
 function readFile(name)

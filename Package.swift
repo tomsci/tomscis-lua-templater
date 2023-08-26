@@ -33,16 +33,16 @@ let package = Package(
             dependencies: [
                 .product(name: "Lua", package: "LuaSwift")
             ],
-            exclude: [
-                "src/templater_tests.lua",
-            ],
             plugins: [
                 .plugin(name: "EmbedLuaPlugin", package: "LuaSwift")
             ]
         ),
         .testTarget(
             name: "tilt-test",
-            dependencies: ["Tilt"]
+            dependencies: ["Tilt"],
+            plugins: [
+                .plugin(name: "EmbedLuaPlugin", package: "LuaSwift")
+            ]
         )
     ]
 )
