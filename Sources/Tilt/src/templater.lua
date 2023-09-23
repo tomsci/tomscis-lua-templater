@@ -91,8 +91,6 @@ json = setmetatable({
     end
 })
 
-local _context
-
 function makeSandbox()
     local env = {}
     setmetatable(env, {
@@ -130,21 +128,14 @@ function makeSandbox()
             json = json,
         }
     })
-    if _context then
-        for k, v in pairs(_context) do
-            env[k] = v
-        end
-    end
     return env
 end
 
-function setContext(newContext)
-    -- print("setContext", dump(newContext))
-    _context = newContext
-end
 
-function render(filename, text, globalIncludes)
-    local env = makeSandbox()
+function render(filename, text, env, globalIncludes)
+    if env == nil then
+        env = makeSandbox()
+    end
     local result = { n = 0 }
     local ctx = {
         includes = { [filename] = true},
