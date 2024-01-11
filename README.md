@@ -10,7 +10,7 @@ These are the core of the templater. Code blocks are written in [Lua 5.4](https:
 
 Code blocks are written as `{% ... %}` and can span multiple lines. They do not expand to anything, unless they contain code which (directly or indirectly) calls [`write()`](#writeval).  All code blocks in a given template render share an environment, meaning a block may refer to a variable constructed by an earlier code block. Variables are not shared between renders.
 
-Code blocks do not need to form value Lua blocks - they can be snippets of code providing that they evaluate to a valid Lua block when combined with the subsequent code blocks. Such snippets are referred to as 'partial' code blocks.
+Code blocks do not need to form valid Lua blocks - they can be snippets of code providing that they evaluate to a valid Lua block when combined with the subsequent code blocks. Such snippets are referred to as 'partial' code blocks.
 
 For example, a simple code block would be:
 
@@ -204,7 +204,7 @@ Note the above example uses the "syntactic sugar" convenience form for a [Lua fu
 
 ### `json(val)`
 
-Returns `val` converted to a JSON string. `val` can be any non-recursive Lua data structure containing only types representable in JSON. Empty tables are assumed to be arrays - to force a table to interpreted as a dict if empty, wrap it in a call to `json.dict()`.
+Returns `val` converted to a JSON string. `val` can be any Lua data structure containing only types representable in JSON, and no loops. Empty tables are assumed to be arrays - to force a table to interpreted as a dict if empty, wrap it in a call to `json.dict()`.
 
 Example:
 
