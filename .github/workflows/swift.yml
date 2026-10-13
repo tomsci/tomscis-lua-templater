@@ -26,7 +26,7 @@ jobs:
 
   build-linux:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: swift:6.2
 
     steps:
