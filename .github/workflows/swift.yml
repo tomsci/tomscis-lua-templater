@@ -12,15 +12,13 @@ on:
 jobs:
   build-macos:
 
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         submodules: recursive
-    - name: Switch Xcode
-      run: sudo xcode-select -s /Applications/Xcode_14.3.1.app
     - name: Build
       run: swift build -v
     - name: Run tests
@@ -28,14 +26,14 @@ jobs:
 
   build-linux:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    container: swift:6.2
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         submodules: recursive
-    - uses: swift-actions/setup-swift@v2
     - name: Build
       run: swift build -v
     - name: Run tests
